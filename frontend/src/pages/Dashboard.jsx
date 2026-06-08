@@ -56,17 +56,17 @@ import SkeletonDashboard from '../components/SkeletonDashboard';
 
 const COLORS = ['#6366f1', '#a855f7', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#22c55e', '#6b7280'];
 
-const categoryColors = { 
-  Food: '#ef4444', 
+const categoryColors = {
+  Food: '#ef4444',
   Groceries: '#22c55e',
-  Transport: '#3b82f6', 
-  Shopping: '#a855f7', 
-  Medical: '#10b981', 
-  Education: '#f59e0b', 
-  Entertainment: '#ec4899', 
-  Bills: '#6366f1', 
-  Fuel: '#14b8a6', 
-  Others: '#6b7280' 
+  Transport: '#3b82f6',
+  Shopping: '#a855f7',
+  Medical: '#10b981',
+  Education: '#f59e0b',
+  Entertainment: '#ec4899',
+  Bills: '#6366f1',
+  Fuel: '#14b8a6',
+  Others: '#6b7280'
 };
 
 const getCategoryIcon = (category) => {
@@ -106,7 +106,7 @@ const Dashboard = () => {
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
 
-  const categories = ['Food', 'Groceries', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
+  const categories = ['Food', 'Grocery', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
 
   const refreshDashboard = async () => {
     const response = await api.get('/api/dashboard/summary');
@@ -213,9 +213,9 @@ const Dashboard = () => {
     setExpenseSubmitting(true);
     try {
       const categoryToSave = expenseForm.category === 'Others' ? customCategory.trim() : expenseForm.category;
-      const payload = { 
-        ...expenseForm, 
-        category: categoryToSave, 
+      const payload = {
+        ...expenseForm,
+        category: categoryToSave,
         amount: parseFloat(expenseForm.amount),
         paymentMode: 'Cash'
       };
@@ -323,10 +323,10 @@ const Dashboard = () => {
         </Box>
       </Box>
 
-      <Box sx={{ ...fullBleedSx, display: 'flex', flexDirection: 'column', gap: 0, flex: 1}}>
+      <Box sx={{ ...fullBleedSx, display: 'flex', flexDirection: 'column', gap: 0, flex: 1 }}>
         <Box
           sx={{
-            
+
             ...gridRowSx,
             gridTemplateColumns: {
               xs: 'repeat(2, minmax(0, 1fr))',
@@ -334,41 +334,41 @@ const Dashboard = () => {
             },
           }}
         >
-        {cardData.map((card, i) => (
-          <Card key={i} sx={{ ...sectionCardSx, display: 'flex', flexDirection: 'column', border: '1px solid darkblue' }}>
-            <CardContent sx={{ p: { xs: 1.5, sm: 2 }, flexGrow: 1, minWidth: 0 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+          {cardData.map((card, i) => (
+            <Card key={i} sx={{ ...sectionCardSx, display: 'flex', flexDirection: 'column', border: '1px solid darkblue' }}>
+              <CardContent sx={{ p: { xs: 1.5, sm: 2 }, flexGrow: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      fontWeight: 500,
+                      fontSize: '0.75rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      minWidth: 0,
+                      flex: 1,
+                    }}
+                  >
+                    {card.title}
+                  </Typography>
+                  <Avatar sx={{ bgcolor: `${card.color}15`, color: card.color, width: 32, height: 32, borderRadius: 1, flexShrink: 0 }}>
+                    {card.icon}
+                  </Avatar>
+                </Box>
                 <Typography
-                  variant="caption"
-                  color="text.secondary"
+                  variant="h6"
                   sx={{
-                    fontWeight: 500,
-                    fontSize: '0.75rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    minWidth: 0,
-                    flex: 1,
+                    fontWeight: 400,
+                    fontSize: { xs: '0.95rem', sm: '1rem', md: '1.1rem' },
+                    wordBreak: 'break-word',
                   }}
                 >
-                  {card.title}
+                  {card.value}
                 </Typography>
-                <Avatar sx={{ bgcolor: `${card.color}15`, color: card.color, width: 32, height: 32, borderRadius: 1, flexShrink: 0 }}>
-                  {card.icon}
-                </Avatar>
-              </Box>
-              <Typography
-                variant="h6"
-                sx={{
-                  fontWeight: 400,
-                  fontSize: { xs: '0.95rem', sm: '1rem', md: '1.1rem' },
-                  wordBreak: 'break-word',
-                }}
-              >
-                {card.value}
-              </Typography>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))}
         </Box>
 
         <Box
@@ -377,10 +377,10 @@ const Dashboard = () => {
             gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(0, 1fr)' },
             flex: { md: 1 },
             minHeight: { xs: 'auto', md: 'min(38vh, 22rem)' },
-          
+
           }}
         >
-          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0 , border: '1px solid darkblue'}}>
+          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0, border: '1px solid darkblue' }}>
             <CardContent sx={{ p: 0, width: '100%', minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2, fontSize: '0.95rem' }}>
                 Monthly Trends
@@ -401,7 +401,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0 , border: '1px solid darkblue'}}>
+          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0, border: '1px solid darkblue' }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, p: { xs: 1.5, sm: 2 }, minWidth: 0 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '0.95rem' }}>
                 Categories
@@ -453,7 +453,7 @@ const Dashboard = () => {
             minHeight: { xs: 'auto', md: 'min(28vh, 16rem)' },
           }}
         >
-          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0 , border: '1px solid darkblue'}}>
+          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0, border: '1px solid darkblue' }}>
             <CardContent sx={{ p: 0, width: '100%', minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '0.95rem' }}>
                 Recent Transactions
@@ -513,7 +513,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0 , border: '1px solid darkblue'}}>
+          <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0, border: '1px solid darkblue' }}>
             <CardContent sx={{ p: 0, width: '100%', minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '0.95rem' }}>
                 Overview
@@ -529,7 +529,7 @@ const Dashboard = () => {
                     ) : (
                       'Log income to see savings rate'
                     )
-                  }
+                    }
                   </Typography>
                 </Box>
                 <Box sx={{ p: 1.5, borderRadius: 0, bgcolor: 'background.default', flex: 1 }}>

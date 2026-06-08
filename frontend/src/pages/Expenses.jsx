@@ -11,9 +11,9 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 
-const categories = ['Food', 'Groceries', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
+const categories = ['Food', 'Grocery', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
 const paymentModes = ['Cash', 'GPay', 'PhonePe', 'Bank Transfer', 'Debit Card', 'Credit Card'];
-const categoryColors = { Food: '#ef4444', Groceries: '#22c55e', Transport: '#3b82f6', Shopping: '#a855f7', Medical: '#10b981', Education: '#f59e0b', Entertainment: '#ec4899', Bills: '#6366f1', Fuel: '#14b8a6', Others: '#6b7280' };
+const categoryColors = { Food: '#ef4444', Grocery: '#22c55e', Transport: '#3b82f6', Shopping: '#a855f7', Medical: '#10b981', Education: '#f59e0b', Entertainment: '#ec4899', Bills: '#6366f1', Fuel: '#14b8a6', Others: '#6b7280' };
 
 const getCategoryColor = (category) => {
   return categoryColors[category] || '#6b7280';
@@ -115,9 +115,9 @@ const Expenses = () => {
     setSubmitting(true);
     try {
       const categoryToSave = form.category === 'Others' ? customCategory.trim() : form.category;
-      const payload = { 
-        ...form, 
-        category: categoryToSave, 
+      const payload = {
+        ...form,
+        category: categoryToSave,
         amount: parseFloat(form.amount),
         paymentMode: editId ? (expenses.find(e => e.id === editId)?.paymentMode || 'Cash') : 'Cash'
       };
@@ -182,7 +182,7 @@ const Expenses = () => {
                   width: 5,
                   bgcolor: getCategoryColor(exp.category)
                 }} />
-                
+
                 <CardContent sx={{ p: '16px !important', pl: 2.5 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                     <Box sx={{ maxWidth: '70%' }}>
@@ -197,7 +197,7 @@ const Expenses = () => {
                       -₹{parseFloat(exp.amount).toFixed(2)}
                     </Typography>
                   </Box>
-                  
+
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                       <Chip
@@ -227,13 +227,13 @@ const Expenses = () => {
               </Card>
             ))
           )}
-          <TablePagination 
-            component="div" 
-            count={totalElements} 
-            page={page} 
-            onPageChange={(_, p) => setPage(p)} 
-            rowsPerPage={rowsPerPage} 
-            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }} 
+          <TablePagination
+            component="div"
+            count={totalElements}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
             sx={{
               '.MuiTablePagination-selectLabel, .MuiTablePagination-input': {
                 display: { xs: 'none', sm: 'inline-block' }

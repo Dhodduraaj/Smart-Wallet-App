@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import api from '../lib/api';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import {
   Box, Typography, Card, CardContent, Button, TextField, Grid, CircularProgress,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Divider,
@@ -58,22 +58,19 @@ const Reports = () => {
         const base64Data = base64Result.split(',')[1];
         const filename = `financial_report_${startDate}_to_${endDate}.pdf`;
         
-        try {
-          await Filesystem.writeFile({
-            path: `Download/${filename}`,
-            data: base64Data,
-            directory: Directory.ExternalStorage
-          });
-          toast.success('PDF saved to Downloads folder');
-        } catch (downloadErr) {
-          console.warn(downloadErr);
-          await Filesystem.writeFile({
-            path: filename,
-            data: base64Data,
-            directory: Directory.Documents
-          });
-          toast.success('PDF saved to Documents folder');
-        }
+        const fileResult = await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Cache
+        });
+        
+        const PdfDownloader = registerPlugin('PdfDownloader');
+        await PdfDownloader.downloadPdf({
+          filePath: fileResult.uri,
+          fileName: filename
+        });
+        
+        toast.success('PDF saved to Downloads folder');
       } else {
         const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
         const link = document.createElement('a');
