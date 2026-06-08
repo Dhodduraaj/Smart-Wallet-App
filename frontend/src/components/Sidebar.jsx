@@ -27,11 +27,12 @@ import {
   Brightness7Outlined,
   AccountBalanceWalletOutlined,
   InfoOutlined,
+  SwapHorizOutlined,
 } from '@mui/icons-material';
 
 const drawerWidth = 260;
 
-const Sidebar = ({ darkMode, toggleDarkMode, onNavigate }) => {
+const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -49,6 +50,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate }) => {
     { text: 'Reminders', icon: <NotificationsNoneOutlined />, path: '/reminders' },
     { text: 'Calculator', icon: <CalculateOutlined />, path: '/calculator' },
     { text: 'Reports', icon: <AssessmentOutlined />, path: '/reports' },
+    { text: 'Self Transfer', icon: <SwapHorizOutlined />, onClick: onSelfTransferClick },
     { text: 'Profile', icon: <PersonOutlineOutlined />, path: '/profile' },
     { text: 'About', icon: <InfoOutlined />, path: '/about' },
   ];
@@ -99,7 +101,14 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate }) => {
             return (
               <ListItemButton
                 key={item.text}
-                onClick={() => handleNav(item.path)}
+                onClick={() => {
+                  if (item.onClick) {
+                    item.onClick();
+                    onNavigate?.();
+                  } else {
+                    handleNav(item.path);
+                  }
+                }}
                 sx={{
                   borderRadius: 2,
                   py: 1.25,

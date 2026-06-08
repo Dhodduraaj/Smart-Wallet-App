@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import api from '../lib/api';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 import {
   Box, Typography, Card, CardContent, Button, TextField, Grid, CircularProgress,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Divider,
@@ -32,6 +34,15 @@ const Reports = () => {
     finally { setLoading(false); }
   };
 
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const downloadPdf = async () => {
     setDownloading(true);
     try {
@@ -41,17 +52,42 @@ const Reports = () => {
       if (filterCategory === 'none') url += `&omitCategory=true`;
       
       const res = await api.get(url, { responseType: 'blob' });
-      const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', `financial_report_${startDate}_to_${endDate}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(blobUrl);
-      toast.success('PDF downloaded!');
-    } catch { toast.error('Failed to download PDF'); }
-    finally { setDownloading(false); }
+      
+      if (Capacitor.getPlatform() === 'android') {
+        const base64Result = await blobToBase64(new Blob([res.data]));
+        const base64Data = base64Result.split(',')[1];
+        const filename = `financial_report_${startDate}_to_${endDate}.pdf`;
+        
+        try {
+          await Filesystem.requestPermissions();
+        } catch (e) {
+          console.log('Permission request ignored or not required', e);
+        }
+
+        await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Documents
+        });
+        
+        toast.success('PDF saved to Documents folder');
+      } else {
+        const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', `financial_report_${startDate}_to_${endDate}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(blobUrl);
+        toast.success('PDF downloaded!');
+      }
+    } catch (err) { 
+      console.error(err);
+      toast.error('Failed to download PDF'); 
+    } finally { 
+      setDownloading(false); 
+    }
   };
 
   // Quick presets

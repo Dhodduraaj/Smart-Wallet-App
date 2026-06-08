@@ -101,12 +101,11 @@ const Dashboard = () => {
 
   // Expense dialog state
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ accountId: '', description: '', amount: '', category: 'Food', paymentMode: 'Cash', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
+  const [expenseForm, setExpenseForm] = useState({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
 
   const categories = ['Food', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
-  const paymentModes = ['Cash', 'GPay', 'PhonePe', 'Bank Transfer', 'Debit Card', 'Credit Card'];
 
   const refreshDashboard = async () => {
     const response = await api.get('/api/dashboard/summary');
@@ -213,12 +212,17 @@ const Dashboard = () => {
     setExpenseSubmitting(true);
     try {
       const categoryToSave = expenseForm.category === 'Others' ? customCategory.trim() : expenseForm.category;
-      const payload = { ...expenseForm, category: categoryToSave, amount: parseFloat(expenseForm.amount) };
+      const payload = { 
+        ...expenseForm, 
+        category: categoryToSave, 
+        amount: parseFloat(expenseForm.amount),
+        paymentMode: 'Cash'
+      };
       await api.post('/api/expenses', payload);
       toast.success('Expense added');
       setExpenseDialogOpen(false);
       await refreshDashboard();
-      setExpenseForm({ accountId: '', description: '', amount: '', category: 'Food', paymentMode: 'Cash', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
+      setExpenseForm({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
       setCustomCategory('');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save expense');
@@ -658,38 +662,19 @@ const Dashboard = () => {
               />
             </Grid>
           </Grid>
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <TextField
-                select
-                label="Category"
-                value={expenseForm.category}
-                onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                fullWidth
-              >
-                {categories.map(c => (
-                  <MenuItem key={c} value={c}>
-                    {c}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-            <Grid item xs={6}>
-              <TextField
-                select
-                label="Payment Mode"
-                value={expenseForm.paymentMode}
-                onChange={(e) => setExpenseForm({ ...expenseForm, paymentMode: e.target.value })}
-                fullWidth
-              >
-                {paymentModes.map(p => (
-                  <MenuItem key={p} value={p}>
-                    {p}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-          </Grid>
+          <TextField
+            select
+            label="Category"
+            value={expenseForm.category}
+            onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+            fullWidth
+          >
+            {categories.map(c => (
+              <MenuItem key={c} value={c}>
+                {c}
+              </MenuItem>
+            ))}
+          </TextField>
           {expenseForm.category === 'Others' && (
             <TextField
               label="Custom Category Name"

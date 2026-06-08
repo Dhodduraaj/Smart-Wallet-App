@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../lib/api';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Grid, Switch, FormControlLabel, IconButton,
@@ -13,6 +15,34 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 import { getDeviceTimeZone } from '../lib/deviceTimezone';
+
+const syncAndroidNotifications = async (enabled, reminderTime) => {
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: 1 }] });
+    if (enabled) {
+      const [hour, minute] = (reminderTime || '21:00').split(':').map(Number);
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            title: "Daily Expense Reminder",
+            body: "Don't forget to log your expenses today!",
+            id: 1,
+            schedule: {
+              on: {
+                hour: hour,
+                minute: minute
+              },
+              repeats: true,
+              allowWhileIdle: true
+            }
+          }
+        ]
+      });
+    }
+  } catch (err) {
+    console.error('Error syncing notifications:', err);
+  }
+};
 
 const formatTimeForInput = (time) => {
   if (!time) return '21:00';
@@ -46,12 +76,17 @@ const Reminders = () => {
         api.get('/api/reminders/upcoming'),
       ]);
       const cfg = configRes.data;
-      setDailyConfig({
+      const updatedConfig = {
         ...cfg,
         reminderTime: formatTimeForInput(cfg.reminderTime),
         reminderZoneId: cfg.reminderZoneId || getDeviceTimeZone(),
-      });
+      };
+      setDailyConfig(updatedConfig);
       setPayments(payRes.data);
+
+      if (Capacitor.getPlatform() === 'android') {
+        await syncAndroidNotifications(updatedConfig.enabled, updatedConfig.reminderTime);
+      }
     } catch { toast.error('Failed to load reminders'); }
     finally { setLoading(false); }
   };
@@ -65,6 +100,28 @@ const Reminders = () => {
       [field]: value,
       reminderZoneId: zoneId,
     };
+
+    const isAndroid = Capacitor.getPlatform() === 'android';
+
+    if (isAndroid && field === 'enabled' && value === true) {
+      try {
+        const check = await LocalNotifications.checkPermissions();
+        let status = check.display;
+        if (status !== 'granted') {
+          const req = await LocalNotifications.requestPermissions();
+          status = req.display;
+        }
+        if (status !== 'granted') {
+          toast.error('Notification permission denied. Cannot enable daily reminders.');
+          return;
+        }
+      } catch (err) {
+        console.error('Error requesting notification permission:', err);
+        toast.error('Failed to request notification permission');
+        return;
+      }
+    }
+
     setDailyConfig(updated);
     try {
       await api.put('/api/reminders/daily', {
@@ -73,6 +130,9 @@ const Reminders = () => {
         reminderZoneId: zoneId,
       });
       toast.success('Daily reminder updated');
+      if (isAndroid) {
+        await syncAndroidNotifications(updated.enabled, updated.reminderTime);
+      }
     } catch { toast.error('Failed to update'); }
   };
 

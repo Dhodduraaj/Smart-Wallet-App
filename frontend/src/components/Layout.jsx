@@ -16,6 +16,7 @@ import {
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import Sidebar from './Sidebar';
+import SelfTransferDialog from './SelfTransferDialog';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import {
   DashboardOutlined,
@@ -35,6 +36,7 @@ const BOTTOM_NAV_ROUTES = ['/dashboard', '/accounts', '/expenses', '/income'];
 
 const Layout = ({ children, darkMode, toggleDarkMode }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [selfTransferOpen, setSelfTransferOpen] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
@@ -160,10 +162,15 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
               darkMode={darkMode}
               toggleDarkMode={toggleDarkMode}
               onNavigate={closeMobileDrawer}
+              onSelfTransferClick={() => setSelfTransferOpen(true)}
             />
           </Drawer>
         ) : (
-          <Sidebar darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
+          <Sidebar 
+            darkMode={darkMode} 
+            toggleDarkMode={toggleDarkMode} 
+            onSelfTransferClick={() => setSelfTransferOpen(true)} 
+          />
         )}
       </Box>
 
@@ -243,6 +250,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
           </BottomNavigation>
         </Paper>
       )}
+      <SelfTransferDialog open={selfTransferOpen} onClose={() => setSelfTransferOpen(false)} />
     </Box>
   );
 };

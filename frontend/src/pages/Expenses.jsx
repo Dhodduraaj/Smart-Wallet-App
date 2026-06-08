@@ -19,7 +19,7 @@ const getCategoryColor = (category) => {
   return categoryColors[category] || '#6b7280';
 };
 
-const emptyForm = { accountId: '', description: '', amount: '', category: 'Food', paymentMode: 'Cash', expenseDate: new Date().toISOString().split('T')[0], notes: '' };
+const emptyForm = { accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' };
 
 const Expenses = () => {
   const [expenses, setExpenses] = useState([]);
@@ -104,7 +104,7 @@ const Expenses = () => {
   const openEdit = (exp) => {
     setEditId(exp.id);
     const category = exp.category;
-    setForm({ accountId: exp.accountId, description: exp.description, amount: String(exp.amount), category: category, paymentMode: exp.paymentMode, expenseDate: exp.expenseDate, notes: exp.notes || '' });
+    setForm({ accountId: exp.accountId, description: exp.description, amount: String(exp.amount), category: category, expenseDate: exp.expenseDate, notes: exp.notes || '' });
     setCustomCategory(category === 'Others' ? '' : category);
     setDialogOpen(true);
   };
@@ -115,7 +115,12 @@ const Expenses = () => {
     setSubmitting(true);
     try {
       const categoryToSave = form.category === 'Others' ? customCategory.trim() : form.category;
-      const payload = { ...form, category: categoryToSave, amount: parseFloat(form.amount) };
+      const payload = { 
+        ...form, 
+        category: categoryToSave, 
+        amount: parseFloat(form.amount),
+        paymentMode: editId ? (expenses.find(e => e.id === editId)?.paymentMode || 'Cash') : 'Cash'
+      };
       if (editId) { await api.put(`/api/expenses/${editId}`, payload); toast.success('Expense updated'); }
       else { await api.post('/api/expenses', payload); toast.success('Expense added'); }
       setDialogOpen(false); fetchExpenses();
@@ -295,18 +300,9 @@ const Expenses = () => {
               <TextField label="Date" type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} required fullWidth InputLabelProps={{ shrink: true }} />
             </Grid>
           </Grid>
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <TextField select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} fullWidth>
-                {categories.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-              </TextField>
-            </Grid>
-            <Grid item xs={6}>
-              <TextField select label="Payment Mode" value={form.paymentMode} onChange={(e) => setForm({ ...form, paymentMode: e.target.value })} fullWidth>
-                {paymentModes.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
-              </TextField>
-            </Grid>
-          </Grid>
+          <TextField select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} fullWidth>
+            {categories.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+          </TextField>
           {form.category === 'Others' && (
             <TextField
               label="Custom Category Name"
