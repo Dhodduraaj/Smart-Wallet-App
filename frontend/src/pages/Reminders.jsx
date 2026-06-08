@@ -21,12 +21,23 @@ const syncAndroidNotifications = async (enabled, reminderTime) => {
     await LocalNotifications.cancel({ notifications: [{ id: 1 }] });
     if (enabled) {
       const [hour, minute] = (reminderTime || '21:00').split(':').map(Number);
+      
+      await LocalNotifications.createChannel({
+        id: 'reminder-channel',
+        name: 'Daily Reminders',
+        description: 'Channel for daily expense entry reminders',
+        importance: 5, // High
+        visibility: 1, // Public
+        vibration: true
+      });
+
       await LocalNotifications.schedule({
         notifications: [
           {
             title: "Daily Expense Reminder",
             body: "Don't forget to log your expenses today!",
             id: 1,
+            channelId: 'reminder-channel',
             schedule: {
               on: {
                 hour: hour,
@@ -103,7 +114,7 @@ const Reminders = () => {
 
     const isAndroid = Capacitor.getPlatform() === 'android';
 
-    if (isAndroid && field === 'enabled' && value === true) {
+    if (isAndroid && ((field === 'enabled' && value === true) || (field === 'reminderTime' && dailyConfig.enabled))) {
       try {
         const check = await LocalNotifications.checkPermissions();
         let status = check.display;
