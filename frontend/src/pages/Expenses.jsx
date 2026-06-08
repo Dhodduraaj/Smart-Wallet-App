@@ -11,9 +11,9 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 
-const categories = ['Food', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
+const categories = ['Food', 'Groceries', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
 const paymentModes = ['Cash', 'GPay', 'PhonePe', 'Bank Transfer', 'Debit Card', 'Credit Card'];
-const categoryColors = { Food: '#ef4444', Transport: '#3b82f6', Shopping: '#a855f7', Medical: '#10b981', Education: '#f59e0b', Entertainment: '#ec4899', Bills: '#6366f1', Fuel: '#14b8a6', Others: '#6b7280' };
+const categoryColors = { Food: '#ef4444', Groceries: '#22c55e', Transport: '#3b82f6', Shopping: '#a855f7', Medical: '#10b981', Education: '#f59e0b', Entertainment: '#ec4899', Bills: '#6366f1', Fuel: '#14b8a6', Others: '#6b7280' };
 
 const getCategoryColor = (category) => {
   return categoryColors[category] || '#6b7280';

@@ -54,10 +54,11 @@ import {
 import { toast } from 'react-hot-toast';
 import SkeletonDashboard from '../components/SkeletonDashboard';
 
-const COLORS = ['#6366f1', '#a855f7', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#6b7280'];
+const COLORS = ['#6366f1', '#a855f7', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#22c55e', '#6b7280'];
 
 const categoryColors = { 
   Food: '#ef4444', 
+  Groceries: '#22c55e',
   Transport: '#3b82f6', 
   Shopping: '#a855f7', 
   Medical: '#10b981', 
@@ -70,7 +71,7 @@ const categoryColors = {
 
 const getCategoryIcon = (category) => {
   const cat = (category || '').toUpperCase();
-  if (cat.includes('FOOD') || cat.includes('RESTAURANT')) return <FastfoodOutlined />;
+  if (cat.includes('FOOD') || cat.includes('RESTAURANT') || cat.includes('GROCER')) return <FastfoodOutlined />;
   if (cat.includes('TRANS') || cat.includes('CAB') || cat.includes('TRAVEL')) return <DirectionsCarOutlined />;
   if (cat.includes('SHOP') || cat.includes('CLOTH')) return <ShoppingBagOutlined />;
   if (cat.includes('MED') || cat.includes('HEALTH') || cat.includes('HOSPITAL')) return <LocalHospitalOutlined />;
@@ -105,7 +106,7 @@ const Dashboard = () => {
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
 
-  const categories = ['Food', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
+  const categories = ['Food', 'Groceries', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
 
   const refreshDashboard = async () => {
     const response = await api.get('/api/dashboard/summary');

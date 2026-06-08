@@ -47,10 +47,10 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
     { text: 'Accounts', icon: <AccountBalanceOutlined />, path: '/accounts' },
     { text: 'Income', icon: <PaymentsOutlined />, path: '/income' },
     { text: 'Expenses', icon: <ReceiptLongOutlined />, path: '/expenses' },
+    { text: 'Self Transfer', icon: <SwapHorizOutlined />, onClick: onSelfTransferClick },
     { text: 'Reminders', icon: <NotificationsNoneOutlined />, path: '/reminders' },
     { text: 'Calculator', icon: <CalculateOutlined />, path: '/calculator' },
     { text: 'Reports', icon: <AssessmentOutlined />, path: '/reports' },
-    { text: 'Self Transfer', icon: <SwapHorizOutlined />, onClick: onSelfTransferClick },
     { text: 'Profile', icon: <PersonOutlineOutlined />, path: '/profile' },
     { text: 'About', icon: <InfoOutlined />, path: '/about' },
   ];
@@ -88,7 +88,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
           Smart Wallet
         </Typography>
       </Toolbar>
-      
+
       <Divider />
 
       {/* Navigation List */}
@@ -138,7 +138,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
         {/* Footer Area */}
         <Box>
           <Divider sx={{ mb: 2 }} />
-          
+
           {/* User Block */}
           {user && (
             <Box sx={{ px: 1, mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
