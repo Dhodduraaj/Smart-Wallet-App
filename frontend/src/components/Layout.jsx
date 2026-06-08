@@ -26,6 +26,8 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { requestPwaExit } from '../lib/pwaExit';
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 
 const drawerWidth = 260;
 
@@ -46,12 +48,18 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
     setMobileOpen(false);
   };
 
-  const handleExitApp = () => {
+  const isAndroidApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+
+  const handleExitApp = async () => {
     closeMobileDrawer();
     if (navigator.vibrate) {
       navigator.vibrate(15);
     }
-    requestPwaExit();
+    if (isAndroidApk) {
+      await App.exitApp();
+    } else {
+      requestPwaExit();
+    }
   };
 
   const getBottomNavValue = () => {
@@ -116,17 +124,19 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
                 Smart Wallet
               </Typography>
             </Box>
-            <Tooltip title="Exit app">
-              <IconButton
-                color="inherit"
-                aria-label="Exit app"
-                onClick={handleExitApp}
-                size="small"
-                sx={{ color: 'text.secondary' }}
-              >
-                <ExitToAppIcon />
-              </IconButton>
-            </Tooltip>
+            {isAndroidApk && (
+              <Tooltip title="Exit app">
+                <IconButton
+                  color="inherit"
+                  aria-label="Exit app"
+                  onClick={handleExitApp}
+                  size="small"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  <ExitToAppIcon />
+                </IconButton>
+              </Tooltip>
+            )}
           </Toolbar>
         </AppBar>
       )}
