@@ -67,9 +67,7 @@ const Expenses = () => {
       const res = await api.get(`/api/expenses?${params}`);
       let fetched = res.data.content || [];
       fetched = [...fetched].sort((a, b) => {
-        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tB - tA;
+        return new Date(b.createdAt) - new Date(a.createdAt);
       });
       setExpenses(fetched);
       setTotalElements(res.data.totalElements || 0);
@@ -215,7 +213,7 @@ const Expenses = () => {
                         {exp.description}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {exp.expenseDate} • {formatTime(exp.createdAt)}
+                        {isAndroidApk ? exp.expenseDate : `${exp.expenseDate} • ${formatTime(exp.createdAt)}`}
                       </Typography>
                     </Box>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'error.main' }}>
@@ -273,7 +271,7 @@ const Expenses = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Date</TableCell>
-                  <TableCell>Time</TableCell>
+                  {!isAndroidApk && <TableCell>Time</TableCell>}
                   <TableCell>Description</TableCell>
                   <TableCell>Category</TableCell>
                   <TableCell>Account</TableCell>
@@ -283,12 +281,12 @@ const Expenses = () => {
               </TableHead>
               <TableBody>
                 {expenses.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={isAndroidApk ? 6 : 7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
                 ) : (
                   expenses.map((exp) => (
                     <TableRow key={exp.id} hover>
                       <TableCell>{exp.expenseDate}</TableCell>
-                      <TableCell>{formatTime(exp.createdAt)}</TableCell>
+                      {!isAndroidApk && <TableCell>{formatTime(exp.createdAt)}</TableCell>}
                       <TableCell sx={{ fontWeight: 600 }}>{exp.description}</TableCell>
                       <TableCell>
                         <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />
