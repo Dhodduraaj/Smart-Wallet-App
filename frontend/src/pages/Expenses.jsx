@@ -30,12 +30,9 @@ const Expenses = () => {
     try {
       const date = new Date(isoString);
       if (isNaN(date.getTime())) return '';
-      let hours = date.getHours();
+      const hours = String(date.getHours()).padStart(2, '0');
       const minutes = String(date.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+      return `${hours}:${minutes}`;
     } catch {
       return '';
     }
@@ -62,18 +59,16 @@ const Expenses = () => {
 
   const fetchExpenses = async () => {
     try {
-      const params = new URLSearchParams({ page, size: rowsPerPage, sort: 'expenseDate,desc' });
+      const params = new URLSearchParams({ page, size: rowsPerPage, sort: 'createdAt,desc' });
       if (search) params.append('search', search);
       if (filterCategory) params.append('category', filterCategory);
       const res = await api.get(`/api/expenses?${params}`);
       let fetched = res.data.content || [];
-      if (isAndroidApk) {
-        fetched = [...fetched].sort((a, b) => {
-          const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return tB - tA;
-        });
-      }
+      fetched = [...fetched].sort((a, b) => {
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tB - tA;
+      });
       setExpenses(fetched);
       setTotalElements(res.data.totalElements || 0);
     } catch {
@@ -217,7 +212,7 @@ const Expenses = () => {
                         {exp.description}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {exp.expenseDate} {isAndroidApk ? `• ${formatTime(exp.createdAt)}` : `• ${exp.paymentMode}`}
+                        {exp.expenseDate} • {formatTime(exp.createdAt)}
                       </Typography>
                     </Box>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'error.main' }}>
@@ -275,6 +270,7 @@ const Expenses = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Date</TableCell>
+                  <TableCell>Time</TableCell>
                   <TableCell>Description</TableCell>
                   <TableCell>Category</TableCell>
                   <TableCell>Account</TableCell>
@@ -284,13 +280,12 @@ const Expenses = () => {
               </TableHead>
               <TableBody>
                 {expenses.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
                 ) : (
                   expenses.map((exp) => (
                     <TableRow key={exp.id} hover>
-                      <TableCell>
-                        {isAndroidApk ? `${exp.expenseDate} ${formatTime(exp.createdAt)}` : exp.expenseDate}
-                      </TableCell>
+                      <TableCell>{exp.expenseDate}</TableCell>
+                      <TableCell>{formatTime(exp.createdAt)}</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>{exp.description}</TableCell>
                       <TableCell>
                         <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />

@@ -9,6 +9,11 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: true
+  mail:
+    host: localhost
+    port: 587
+    username: dummy
+    password: dummy
 
 app:
   jwt:

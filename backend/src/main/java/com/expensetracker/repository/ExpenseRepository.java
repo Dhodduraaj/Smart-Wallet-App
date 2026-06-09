@@ -21,7 +21,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID>, JpaSpec
     List<Expense> findByUserIdAndAccountId(UUID userId, UUID accountId);
     List<Expense> findByUserIdAndExpenseDateBetween(UUID userId, LocalDate start, LocalDate end);
 
-    @Query("SELECT e FROM Expense e JOIN FETCH e.account WHERE e.user.id = :userId ORDER BY e.expenseDate DESC, e.id DESC")
+    @Query("SELECT e FROM Expense e JOIN FETCH e.account WHERE e.user.id = :userId ORDER BY e.createdAt DESC")
     List<Expense> findRecentByUserId(@Param("userId") UUID userId, Pageable pageable);
 
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.user.id = :userId AND e.expenseDate BETWEEN :start AND :end")
