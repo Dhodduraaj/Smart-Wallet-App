@@ -30,9 +30,11 @@ const Expenses = () => {
     try {
       const date = new Date(isoString);
       if (isNaN(date.getTime())) return '';
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${hours}:${minutes}`;
+      return new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).format(date);
     } catch {
       return '';
     }
