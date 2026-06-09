@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import api from '../lib/api';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
@@ -22,6 +23,24 @@ const getCategoryColor = (category) => {
 const emptyForm = { accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' };
 
 const Expenses = () => {
+  const isAndroidApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+
+  const formatTime = (isoString) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return '';
+      let hours = date.getHours();
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+    } catch {
+      return '';
+    }
+  };
+
   const [expenses, setExpenses] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +66,15 @@ const Expenses = () => {
       if (search) params.append('search', search);
       if (filterCategory) params.append('category', filterCategory);
       const res = await api.get(`/api/expenses?${params}`);
-      setExpenses(res.data.content || []);
+      let fetched = res.data.content || [];
+      if (isAndroidApk) {
+        fetched = [...fetched].sort((a, b) => {
+          const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tB - tA;
+        });
+      }
+      setExpenses(fetched);
       setTotalElements(res.data.totalElements || 0);
     } catch {
       toast.error('Failed to load expenses');
@@ -190,7 +217,7 @@ const Expenses = () => {
                         {exp.description}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {exp.expenseDate} • {exp.paymentMode}
+                        {exp.expenseDate} {isAndroidApk ? `• ${formatTime(exp.createdAt)}` : `• ${exp.paymentMode}`}
                       </Typography>
                     </Box>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'error.main' }}>
@@ -261,7 +288,9 @@ const Expenses = () => {
                 ) : (
                   expenses.map((exp) => (
                     <TableRow key={exp.id} hover>
-                      <TableCell>{exp.expenseDate}</TableCell>
+                      <TableCell>
+                        {isAndroidApk ? `${exp.expenseDate} ${formatTime(exp.createdAt)}` : exp.expenseDate}
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>{exp.description}</TableCell>
                       <TableCell>
                         <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />
