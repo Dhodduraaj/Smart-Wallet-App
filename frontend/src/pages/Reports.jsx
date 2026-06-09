@@ -50,26 +50,26 @@ const Reports = () => {
       if (filterTransactionType) url += `&transactionType=${filterTransactionType}`;
       if (filterCategory && filterCategory !== 'none') url += `&category=${filterCategory}`;
       if (filterCategory === 'none') url += `&omitCategory=true`;
-      
+
       const res = await api.get(url, { responseType: 'blob' });
-      
+
       if (Capacitor.getPlatform() === 'android') {
         const base64Result = await blobToBase64(new Blob([res.data]));
         const base64Data = base64Result.split(',')[1];
         const filename = `financial_report_${startDate}_to_${endDate}.pdf`;
-        
+
         const fileResult = await Filesystem.writeFile({
           path: filename,
           data: base64Data,
           directory: Directory.Cache
         });
-        
+
         const PdfDownloader = registerPlugin('PdfDownloader');
         await PdfDownloader.downloadPdf({
           filePath: fileResult.uri,
           fileName: filename
         });
-        
+
         toast.success('PDF saved to Downloads folder');
       } else {
         const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
@@ -82,11 +82,11 @@ const Reports = () => {
         window.URL.revokeObjectURL(blobUrl);
         toast.success('PDF downloaded!');
       }
-    } catch (err) { 
+    } catch (err) {
       console.error(err);
-      toast.error('Failed to download PDF'); 
-    } finally { 
-      setDownloading(false); 
+      toast.error('Failed to download PDF');
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -271,7 +271,7 @@ const Reports = () => {
           </FormControl>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setFilterDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setFilterDialogOpen(false)} variant="outlined" color="error">Cancel</Button>
           <Button
             variant="contained"
             onClick={() => {

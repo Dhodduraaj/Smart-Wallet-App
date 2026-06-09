@@ -250,7 +250,6 @@ const Expenses = () => {
                   <TableCell>Date</TableCell>
                   <TableCell>Description</TableCell>
                   <TableCell>Category</TableCell>
-                  <TableCell>Payment Mode</TableCell>
                   <TableCell>Account</TableCell>
                   <TableCell align="right">Amount</TableCell>
                   <TableCell align="center">Actions</TableCell>
@@ -258,7 +257,7 @@ const Expenses = () => {
               </TableHead>
               <TableBody>
                 {expenses.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
                 ) : (
                   expenses.map((exp) => (
                     <TableRow key={exp.id} hover>
@@ -267,7 +266,6 @@ const Expenses = () => {
                       <TableCell>
                         <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />
                       </TableCell>
-                      <TableCell>{exp.paymentMode}</TableCell>
                       <TableCell>{exp.accountName}</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>-₹{parseFloat(exp.amount).toFixed(2)}</TableCell>
                       <TableCell align="center">

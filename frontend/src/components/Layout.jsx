@@ -51,6 +51,8 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
   };
 
   const isAndroidApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+  const safeAreaTop = isAndroidApk ? 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))' : '0px';
+  const safeAreaBottom = isAndroidApk ? 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' : '0px';
 
   const handleExitApp = async () => {
     closeMobileDrawer();
@@ -99,6 +101,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
             borderBottom: '1px solid',
             borderColor: 'divider',
             color: 'text.primary',
+            pt: safeAreaTop,
           }}
         >
           <Toolbar sx={{ justifyContent: 'space-between' }}>
@@ -155,6 +158,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
               [`& .MuiDrawer-paper`]: {
                 width: drawerWidth,
                 boxShadow: theme.shadows[8],
+                pt: safeAreaTop,
               },
             }}
           >
@@ -179,9 +183,13 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
         sx={{
           flexGrow: 1,
           p: { xs: 2, sm: 3, md: 4 },
-          pb: { xs: 10, sm: 10, md: 4 },
+          pb: {
+            xs: isAndroidApk ? `calc(80px + ${safeAreaBottom})` : 10,
+            sm: isAndroidApk ? `calc(80px + ${safeAreaBottom})` : 10,
+            md: 4,
+          },
           width: { md: `calc(100% - ${drawerWidth}px)` },
-          mt: isMobile ? '64px' : 0,
+          mt: isMobile ? `calc(64px + ${safeAreaTop})` : 0,
           minWidth: 0,
         }}
       >
@@ -200,6 +208,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
                 ? 'rgba(15, 15, 35, 0.85)'
                 : 'rgba(255, 255, 255, 0.85)',
             backdropFilter: 'blur(20px)',
+            pb: safeAreaBottom,
           }}
         >
           <BottomNavigation
