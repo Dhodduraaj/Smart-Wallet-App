@@ -34,7 +34,7 @@ const Expenses = () => {
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
-      }).format(date);
+      }).format(date).toLowerCase();
     } catch {
       return '';
     }
@@ -143,7 +143,8 @@ const Expenses = () => {
         ...form,
         category: categoryToSave,
         amount: parseFloat(form.amount),
-        paymentMode: editId ? (expenses.find(e => e.id === editId)?.paymentMode || 'Cash') : 'Cash'
+        paymentMode: editId ? (expenses.find(e => e.id === editId)?.paymentMode || 'Cash') : 'Cash',
+        createdAt: editId ? (expenses.find(e => e.id === editId)?.createdAt) : new Date().toISOString()
       };
       if (editId) { await api.put(`/api/expenses/${editId}`, payload); toast.success('Expense updated'); }
       else { await api.post('/api/expenses', payload); toast.success('Expense added'); }

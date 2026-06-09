@@ -96,6 +96,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .paymentMode(expenseDto.getPaymentMode())
                 .expenseDate(expenseDto.getExpenseDate())
                 .notes(expenseDto.getNotes())
+                .createdAt(expenseDto.getCreatedAt())
                 .build();
 
         expense = expenseRepository.save(expense);
@@ -139,6 +140,9 @@ public class ExpenseServiceImpl implements ExpenseService {
         expense.setPaymentMode(expenseDto.getPaymentMode());
         expense.setExpenseDate(expenseDto.getExpenseDate());
         expense.setNotes(expenseDto.getNotes());
+        if (expenseDto.getCreatedAt() != null) {
+            expense.setCreatedAt(expenseDto.getCreatedAt());
+        }
 
         expense = expenseRepository.save(expense);
         return mapToDto(expense);

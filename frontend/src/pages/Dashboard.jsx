@@ -217,7 +217,8 @@ const Dashboard = () => {
         ...expenseForm,
         category: categoryToSave,
         amount: parseFloat(expenseForm.amount),
-        paymentMode: 'Cash'
+        paymentMode: 'Cash',
+        createdAt: new Date().toISOString()
       };
       await api.post('/api/expenses', payload);
       toast.success('Expense added');

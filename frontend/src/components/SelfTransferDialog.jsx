@@ -79,7 +79,8 @@ const SelfTransferDialog = ({ open, onClose }) => {
         category: 'Others',
         paymentMode: 'Bank Transfer',
         expenseDate: today,
-        notes: notes || 'Self Transfer'
+        notes: notes || 'Self Transfer',
+        createdAt: new Date().toISOString()
       });
 
       // 2. Post income to destination account
