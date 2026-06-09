@@ -271,7 +271,7 @@ const Reports = () => {
           </FormControl>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setFilterDialogOpen(false)} variant="outlined" color="error">Cancel</Button>
+          <Button onClick={() => setFilterDialogOpen(false)} variant="contained" color="error">Cancel</Button>
           <Button
             variant="contained"
             onClick={() => {

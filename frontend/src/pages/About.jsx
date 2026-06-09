@@ -42,7 +42,7 @@ const About = () => {
               <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
                 Dhodduraaj S P
               </Typography>
-              
+
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 Full Stack Developer
               </Typography>
@@ -84,14 +84,14 @@ const About = () => {
 
               <Divider sx={{ my: 3 }} />
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 700, mb: 1 }}>
-              Take it with you! - Install the app on your mobile for the complete experience.
+                Take it with you! - Install the app on your mobile for the complete experience.
               </Typography>
               <Divider sx={{ my: 3 }} />
               <Typography variant="body2" color="text.secondary">
                 Smart Wallet - Expense Tracker
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                A modern expense tracking application built with React and Spring Boot
+                A modern expense tracking application built with utmost User Experience in mind
               </Typography>
             </CardContent>
           </Card>

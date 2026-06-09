@@ -21,7 +21,7 @@ const syncAndroidNotifications = async (enabled, reminderTime) => {
     await LocalNotifications.cancel({ notifications: [{ id: 1 }] });
     if (enabled) {
       const [hour, minute] = (reminderTime || '21:00').split(':').map(Number);
-      
+
       await LocalNotifications.createChannel({
         id: 'reminder-channel',
         name: 'Daily Reminders',
@@ -202,7 +202,7 @@ const Reminders = () => {
             <Typography variant="h6" sx={{ fontWeight: 700 }}>Daily Expense Entry Reminder</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Get reminded every day to log your expenses. The system will send you an email at the configured time.
+            Get reminded every day to log your expenses. The system will send you a notification at the configured time.
           </Typography>
           <Grid container spacing={3} alignItems="center">
             <Grid item xs={12} sm="auto">
@@ -246,9 +246,9 @@ const Reminders = () => {
             <List>
               {pendingPayments.map((p, i) => (
                 <React.Fragment key={p.id}>
-                  <ListItem 
-                    sx={{ 
-                      px: 3, 
+                  <ListItem
+                    sx={{
+                      px: 3,
                       py: 2,
                       flexDirection: isMobile ? 'column' : 'row',
                       alignItems: isMobile ? 'flex-start' : 'center',
@@ -270,7 +270,7 @@ const Reminders = () => {
                         </Box>
                       )}
                     </Box>
-                    
+
                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: isMobile ? 1.5 : 0, pl: isMobile ? 4.5 : 0, width: isMobile ? '100%' : 'auto', justifyContent: 'flex-start' }}>
                       <Chip label={`₹${p.amount}`} size="small" color="error" variant="outlined" sx={{ fontWeight: 700 }} />
                       <Chip label={`Due: ${p.dueDate}`} size="small" variant="outlined" />
@@ -302,10 +302,10 @@ const Reminders = () => {
             <List>
               {completedPayments.map((p, i) => (
                 <React.Fragment key={p.id}>
-                  <ListItem 
-                    sx={{ 
-                      px: 3, 
-                      py: 2, 
+                  <ListItem
+                    sx={{
+                      px: 3,
+                      py: 2,
                       opacity: 0.6,
                       flexDirection: isMobile ? 'column' : 'row',
                       alignItems: isMobile ? 'flex-start' : 'center',
