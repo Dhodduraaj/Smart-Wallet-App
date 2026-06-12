@@ -91,13 +91,12 @@ const PasswordField = ({
           ) : null
         }
         endAdornment={
-          <InputAdornment position="end" sx={{ ml: 0.5, mr: -0.5, flexShrink: 0 }}>
+          <InputAdornment position="end" sx={{ ml: 0.5, mr: 0, flexShrink: 0 }}>
             <IconButton
               type="button"
               tabIndex={0}
               onClick={handleToggle}
               onMouseDown={(e) => e.preventDefault()}
-              edge="end"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
               sx={toggleButtonSx}
@@ -112,7 +111,7 @@ const PasswordField = ({
         }
         sx={{
           overflow: 'visible',
-          pr: 0.5,
+          pr: 1.5,
           '& .MuiInputAdornment-root': {
             overflow: 'visible',
           },

@@ -12,15 +12,30 @@ import { toast } from 'react-hot-toast';
 import PasswordField from '../components/PasswordField';
 
 const AVATARS = [
-  { id: 'po', name: 'Po (Panda)' },
-  { id: 'tigress', name: 'Tigress (Tiger)' },
-  { id: 'shifu', name: 'Shifu (Red Panda)' },
-  { id: 'oogway', name: 'Oogway (Turtle)' },
-  { id: 'sid', name: 'Sid (Sloth)' },
-  { id: 'manny', name: 'Manny (Mammoth)' },
-  { id: 'diego', name: 'Diego (Saber-tooth)' },
-  { id: 'scrat', name: 'Scrat (Squirrel)' }
+  { id: 'po', name: 'Po' },
+  { id: 'tigress', name: 'Tigress' },
+  { id: 'shifu', name: 'Shifu' },
+  { id: 'oogway', name: 'Oogway' },
+  { id: 'sid', name: 'Sid' },
+  { id: 'manny', name: 'Manny' },
+  { id: 'diego', name: 'Diego' },
+  { id: 'scrat', name: 'Scrat' }
 ];
+
+const maskUserId = (id) => {
+  if (!id) return '';
+  const str = String(id);
+  if (str.includes('-')) {
+    const parts = str.split('-');
+    if (parts.length === 5) {
+      return `${parts[0]}-••••-${parts[4].slice(-4)}`;
+    }
+  }
+  if (str.length > 12) {
+    return `${str.slice(0, 6)}...${str.slice(-4)}`;
+  }
+  return str;
+};
 
 const Profile = () => {
   const { user, logout, refreshUser } = useAuth();
@@ -148,7 +163,7 @@ const Profile = () => {
                   <Box>
                     <Typography variant="caption" color="text.secondary">User ID</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 500, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                      {user?.userId || user?.id}
+                      {maskUserId(user?.userId || user?.id)}
                     </Typography>
                   </Box>
                 </Box>

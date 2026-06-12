@@ -16,6 +16,7 @@ import com.lowagie.text.*;
 import com.lowagie.text.Font;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfPageEventHelper;
 import com.lowagie.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -141,14 +142,17 @@ public class ReportServiceImpl implements ReportService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
         try {
-            PdfWriter.getInstance(document, baos);
-            document.open();
-
+            PdfWriter writer = PdfWriter.getInstance(document, baos);
+            
             // Fonts setup
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(26, 54, 93));
             Font subtitleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, new Color(43, 108, 176));
             Font regularFont = FontFactory.getFont(FontFactory.HELVETICA, 10, Color.BLACK);
             Font whiteHeaderFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
+            Font footerFont = FontFactory.getFont(FontFactory.HELVETICA, 9, Color.GRAY);
+
+            writer.setPageEvent(new FooterPageEvent(footerFont));
+            document.open();
 
             Color headerColor = new Color(43, 108, 176);
 
@@ -161,8 +165,15 @@ public class ReportServiceImpl implements ReportService {
             // Date Range
             Paragraph dateRange = new Paragraph("Period: " + reportDto.getStartDate() + " to " + reportDto.getEndDate(), regularFont);
             dateRange.setAlignment(Element.ALIGN_CENTER);
-            dateRange.setSpacingAfter(20);
+            dateRange.setSpacingAfter(10);
             document.add(dateRange);
+
+            // Username
+            String username = reportDto.getEmail() != null ? reportDto.getEmail() : "Unknown";
+            Paragraph usernamePara = new Paragraph("Username: " + username, regularFont);
+            usernamePara.setAlignment(Element.ALIGN_CENTER);
+            usernamePara.setSpacingAfter(20);
+            document.add(usernamePara);
 
             // Detailed Incomes Table (Income first)
             if (!reportDto.getIncomes().isEmpty()) {
@@ -291,5 +302,28 @@ public class ReportServiceImpl implements ReportService {
                 .notes(income.getNotes())
                 .createdAt(income.getCreatedAt())
                 .build();
+    }
+
+    private static class FooterPageEvent extends PdfPageEventHelper {
+        private final Font font;
+
+        public FooterPageEvent(Font font) {
+            this.font = font;
+        }
+
+        @Override
+        public void onEndPage(PdfWriter writer, Document document) {
+            PdfPTable footerTable = new PdfPTable(1);
+            footerTable.setTotalWidth(document.right() - document.left());
+            footerTable.setLockedWidth(true);
+
+            PdfPCell cell = new PdfPCell(new Paragraph("@smart-wallet", font));
+            cell.setBorder(Rectangle.NO_BORDER);
+            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            cell.setPadding(0);
+            footerTable.addCell(cell);
+
+            footerTable.writeSelectedRows(0, -1, document.left(), 25, writer.getDirectContent());
+        }
     }
 }
