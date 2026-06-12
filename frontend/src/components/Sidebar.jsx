@@ -151,7 +151,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
           {user && (
             <Box sx={{ px: 1, mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Avatar
-                src={user.avatar ? `/avatars/${user.avatar}.svg` : undefined}
+                src={user.avatar ? `/avatars/${user.avatar}.png` : undefined}
                 sx={{
                   width: 36,
                   height: 36,

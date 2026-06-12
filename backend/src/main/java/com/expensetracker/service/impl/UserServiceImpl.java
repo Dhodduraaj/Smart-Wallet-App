@@ -187,11 +187,19 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void updateAvatar(UUID userId, String avatar) {
+    public UserDto updateAvatar(UUID userId, String avatar) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         user.setAvatar(avatar);
-        userRepository.save(user);
+        user = userRepository.save(user);
+        return UserDto.builder()
+                .id(user.getId())
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .createdAt(user.getCreatedAt())
+                .onboardingCompleted(user.getOnboardingCompleted())
+                .avatar(user.getAvatar())
+                .build();
     }
 }

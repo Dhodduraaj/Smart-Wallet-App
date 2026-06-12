@@ -2,6 +2,7 @@ package com.expensetracker.controller;
 
 import com.expensetracker.dto.ChangePasswordRequest;
 import com.expensetracker.dto.UpdateAvatarRequest;
+import com.expensetracker.dto.UserDto;
 import com.expensetracker.security.CustomUserDetails;
 import com.expensetracker.service.UserService;
 import jakarta.validation.Valid;
@@ -11,7 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserController {
 
@@ -25,11 +26,11 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/avatar")
-    public ResponseEntity<Void> updateAvatar(
+    @PutMapping("/profile-avatar")
+    public ResponseEntity<UserDto> updateAvatar(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @Valid @RequestBody UpdateAvatarRequest request) {
-        userService.updateAvatar(userDetails.getId(), request.getAvatar());
-        return ResponseEntity.ok().build();
+        UserDto updatedUser = userService.updateAvatar(userDetails.getId(), request.getAvatar());
+        return ResponseEntity.ok(updatedUser);
     }
 }

@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Box, Typography, Card, CardContent, Avatar, Divider, Grid, Button, Chip,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField, IconButton
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, IconButton,
+  InputAdornment
 } from '@mui/material';
 import {
-  PersonOutlineOutlined, EmailOutlined, CalendarTodayOutlined, LogoutOutlined, LockOutlined, EditOutlined
+  PersonOutlineOutlined, EmailOutlined, CalendarTodayOutlined, LogoutOutlined, LockOutlined, EditOutlined,
+  Visibility, VisibilityOff
 } from '@mui/icons-material';
 import api from '../lib/api';
 import { toast } from 'react-hot-toast';
@@ -32,6 +34,9 @@ const Profile = () => {
   // Change password state
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Logout confirmation state
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
@@ -44,7 +49,7 @@ const Profile = () => {
   const handleSaveAvatar = async () => {
     setAvatarSubmitting(true);
     try {
-      await api.post('/api/users/avatar', { avatar: selectedAvatar });
+      await api.put('/api/user/profile-avatar', { avatar: selectedAvatar });
       toast.success('Profile image updated');
       setAvatarDialogOpen(false);
       await refreshUser();
@@ -66,9 +71,12 @@ const Profile = () => {
     }
     setPasswordSubmitting(true);
     try {
-      await api.post('/api/users/change-password', passwordForm);
+      await api.post('/api/user/change-password', passwordForm);
       toast.success('Password updated successfully');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update password');
     } finally {
@@ -87,7 +95,7 @@ const Profile = () => {
             <CardContent sx={{ p: 4, textAlign: 'center' }}>
               <Box sx={{ position: 'relative', width: 100, height: 100, mx: 'auto', mb: 3 }}>
                 <Avatar
-                  src={user?.avatar ? `/avatars/${user.avatar}.svg` : undefined}
+                  src={user?.avatar ? `/avatars/${user.avatar}.png` : undefined}
                   sx={{
                     width: 100,
                     height: 100,
@@ -167,27 +175,63 @@ const Profile = () => {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <TextField
                   label="Current Password"
-                  type="password"
+                  type={showCurrentPassword ? 'text' : 'password'}
                   value={passwordForm.currentPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
                   fullWidth
                   size="small"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          edge="end"
+                        >
+                          {showCurrentPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
                 />
                 <TextField
                   label="New Password"
-                  type="password"
+                  type={showNewPassword ? 'text' : 'password'}
                   value={passwordForm.newPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
                   fullWidth
                   size="small"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          edge="end"
+                        >
+                          {showNewPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
                 />
                 <TextField
                   label="Confirm New Password"
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   value={passwordForm.confirmPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
                   fullWidth
                   size="small"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          edge="end"
+                        >
+                          {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
                 />
                 <Button
                   variant="contained"
@@ -224,7 +268,7 @@ const Profile = () => {
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>PREVIEW</Typography>
               <Avatar
-                src={`/avatars/${selectedAvatar}.svg`}
+                src={`/avatars/${selectedAvatar}.png`}
                 sx={{
                   width: 80,
                   height: 80,
@@ -266,7 +310,7 @@ const Profile = () => {
                     }}
                   >
                     <Avatar
-                      src={`/avatars/${avatar.id}.svg`}
+                      src={`/avatars/${avatar.id}.png`}
                       sx={{ width: 50, height: 50, mx: 'auto' }}
                     />
                   </Box>

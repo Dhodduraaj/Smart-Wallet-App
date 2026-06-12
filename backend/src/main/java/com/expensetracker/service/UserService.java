@@ -16,5 +16,5 @@ public interface UserService {
     void completeOnboarding(UUID userId, OnboardingRequest onboardingRequest);
     UserDto getUserById(UUID userId);
     void changePassword(UUID userId, ChangePasswordRequest request);
-    void updateAvatar(UUID userId, String avatar);
+    UserDto updateAvatar(UUID userId, String avatar);
 }
