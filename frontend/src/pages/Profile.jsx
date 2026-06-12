@@ -2,15 +2,14 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   Box, Typography, Card, CardContent, Avatar, Divider, Grid, Button, Chip,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField, IconButton,
-  InputAdornment
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, IconButton
 } from '@mui/material';
 import {
-  PersonOutlineOutlined, EmailOutlined, CalendarTodayOutlined, LogoutOutlined, LockOutlined, EditOutlined,
-  Visibility, VisibilityOff
+  PersonOutlineOutlined, EmailOutlined, CalendarTodayOutlined, LogoutOutlined, LockOutlined, EditOutlined
 } from '@mui/icons-material';
 import api from '../lib/api';
 import { toast } from 'react-hot-toast';
+import PasswordField from '../components/PasswordField';
 
 const AVATARS = [
   { id: 'po', name: 'Po (Panda)' },
@@ -34,9 +33,6 @@ const Profile = () => {
   // Change password state
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Logout confirmation state
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
@@ -74,9 +70,6 @@ const Profile = () => {
       await api.post('/api/user/change-password', passwordForm);
       toast.success('Password updated successfully');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setShowCurrentPassword(false);
-      setShowNewPassword(false);
-      setShowConfirmPassword(false);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update password');
     } finally {
@@ -173,65 +166,23 @@ const Profile = () => {
                 <LockOutlined color="primary" /> Change Password
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <TextField
+                <PasswordField
                   label="Current Password"
-                  type={showCurrentPassword ? 'text' : 'password'}
                   value={passwordForm.currentPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                  fullWidth
                   size="small"
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                          edge="end"
-                        >
-                          {showCurrentPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    )
-                  }}
                 />
-                <TextField
+                <PasswordField
                   label="New Password"
-                  type={showNewPassword ? 'text' : 'password'}
                   value={passwordForm.newPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  fullWidth
                   size="small"
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                          edge="end"
-                        >
-                          {showNewPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    )
-                  }}
                 />
-                <TextField
+                <PasswordField
                   label="Confirm New Password"
-                  type={showConfirmPassword ? 'text' : 'password'}
                   value={passwordForm.confirmPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  fullWidth
                   size="small"
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          edge="end"
-                        >
-                          {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    )
-                  }}
                 />
                 <Button
                   variant="contained"

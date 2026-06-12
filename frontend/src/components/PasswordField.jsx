@@ -26,6 +26,7 @@ const PasswordField = ({
   name,
   autoComplete,
   sx,
+  size,
 }) => {
   const [internalShow, setInternalShow] = useState(false);
   const isControlled = controlledShow !== undefined;
@@ -68,6 +69,7 @@ const PasswordField = ({
       variant="outlined"
       fullWidth={fullWidth}
       required={required}
+      size={size}
       sx={{
         overflow: 'visible',
         ...sx,
@@ -82,6 +84,7 @@ const PasswordField = ({
         type={showPassword ? 'text' : 'password'}
         value={value}
         onChange={onChange}
+        size={size}
         startAdornment={
           startAdornment ? (
             <InputAdornment position="start">{startAdornment}</InputAdornment>
