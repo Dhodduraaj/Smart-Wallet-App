@@ -25,7 +25,7 @@ const AVATARS = [
 
 const Profile = () => {
   const { user, logout, refreshUser } = useAuth();
-  
+
   // Avatar selection state
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState('');
@@ -320,8 +320,8 @@ const Profile = () => {
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button variant="outlined" color="primary" onClick={() => setAvatarDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveAvatar} disabled={avatarSubmitting}>Save</Button>
+          <Button variant="contained" color="error" onClick={() => setAvatarDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" color='primary' onClick={handleSaveAvatar} disabled={avatarSubmitting}>Save</Button>
         </DialogActions>
       </Dialog>
 
@@ -332,8 +332,8 @@ const Profile = () => {
           <Typography>Are you sure you want to log out?</Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setLogoutDialogOpen(false)} variant="outlined" color="primary">No</Button>
-          <Button onClick={() => { setLogoutDialogOpen(false); logout(); }} variant="contained" color="error">Yes</Button>
+          <Button onClick={() => setLogoutDialogOpen(false)} variant="contained" color='error'>No</Button>
+          <Button onClick={() => { setLogoutDialogOpen(false); logout(); }} variant="contained" color="primary">Yes</Button>
         </DialogActions>
       </Dialog>
     </Box>

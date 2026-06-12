@@ -200,10 +200,10 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
             />
           </Drawer>
         ) : (
-          <Sidebar 
-            darkMode={darkMode} 
-            toggleDarkMode={toggleDarkMode} 
-            onSelfTransferClick={() => setSelfTransferOpen(true)} 
+          <Sidebar
+            darkMode={darkMode}
+            toggleDarkMode={toggleDarkMode}
+            onSelfTransferClick={() => setSelfTransferOpen(true)}
           />
         )}
       </Box>
@@ -297,8 +297,8 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
           <Typography>Are you sure you want to exit the app?</Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setExitDialogOpen(false)} variant="outlined" color="primary">No</Button>
-          <Button onClick={handleConfirmExit} variant="contained" color="error">Yes</Button>
+          <Button onClick={() => setExitDialogOpen(false)} variant="contained" color="error">No</Button>
+          <Button onClick={handleConfirmExit} variant="contained" color="primary">Yes</Button>
         </DialogActions>
       </Dialog>
     </Box>
