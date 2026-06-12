@@ -206,8 +206,8 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
           <Typography>Are you sure you want to log out?</Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setLogoutDialogOpen(false)} variant="outlined" color="primary">No</Button>
-          <Button onClick={() => { setLogoutDialogOpen(false); logout(); }} variant="contained" color="error">Yes</Button>
+          <Button onClick={() => setLogoutDialogOpen(false)} variant="contained" color="error">No</Button>
+          <Button onClick={() => { setLogoutDialogOpen(false); logout(); }} variant="contained" color="primary">Yes</Button>
         </DialogActions>
       </Dialog>
     </Drawer>
