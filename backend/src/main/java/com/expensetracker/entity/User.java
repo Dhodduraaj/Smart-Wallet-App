@@ -31,6 +31,9 @@ public class User {
     @Builder.Default
     private Boolean onboardingCompleted = false;
 
+    @Column(name = "avatar")
+    private String avatar;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

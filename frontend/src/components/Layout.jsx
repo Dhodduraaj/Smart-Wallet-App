@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   AppBar,
@@ -12,6 +12,11 @@ import {
   BottomNavigationAction,
   Paper,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
@@ -54,17 +59,42 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
   const safeAreaTop = isAndroidApk ? 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))' : '0px';
   const safeAreaBottom = isAndroidApk ? 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' : '0px';
 
-  const handleExitApp = async () => {
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
+
+  const handleExitApp = () => {
     closeMobileDrawer();
     if (navigator.vibrate) {
       navigator.vibrate(15);
     }
+    setExitDialogOpen(true);
+  };
+
+  const handleConfirmExit = async () => {
+    setExitDialogOpen(false);
     if (isAndroidApk) {
       await App.exitApp();
     } else {
       requestPwaExit();
     }
   };
+
+  useEffect(() => {
+    let backListenerPromise;
+    if (isAndroidApk) {
+      backListenerPromise = App.addListener('backButton', (data) => {
+        if (location.pathname === '/dashboard' || location.pathname === '/' || location.pathname === '/login') {
+          setExitDialogOpen(true);
+        } else {
+          navigate(-1);
+        }
+      });
+    }
+    return () => {
+      if (backListenerPromise) {
+        backListenerPromise.then((handle) => handle.remove());
+      }
+    };
+  }, [isAndroidApk, location.pathname, navigate]);
 
   const getBottomNavValue = () => {
     const path = location.pathname;
@@ -260,6 +290,17 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
         </Paper>
       )}
       <SelfTransferDialog open={selfTransferOpen} onClose={() => setSelfTransferOpen(false)} />
+
+      <Dialog open={exitDialogOpen} onClose={() => setExitDialogOpen(false)}>
+        <DialogTitle sx={{ fontWeight: 700 }}>Exit Application</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to exit the app?</Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setExitDialogOpen(false)} variant="outlined" color="primary">No</Button>
+          <Button onClick={handleConfirmExit} variant="contained" color="error">Yes</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

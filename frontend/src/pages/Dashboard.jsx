@@ -111,7 +111,8 @@ const Dashboard = () => {
   const refreshDashboard = async () => {
     const response = await api.get('/api/dashboard/summary');
     setData(response.data);
-    setRecentExpenses(response.data.recentExpenses || []);
+    const sorted = [...(response.data.recentExpenses || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    setRecentExpenses(sorted);
   };
 
   const loadAccountsIfNeeded = async () => {
@@ -129,7 +130,8 @@ const Dashboard = () => {
         const response = await api.get('/api/dashboard/summary');
         if (cancelled) return;
         setData(response.data);
-        setRecentExpenses(response.data.recentExpenses || []);
+        const sorted = [...(response.data.recentExpenses || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        setRecentExpenses(sorted);
       } catch (err) {
         if (!cancelled) toast.error('Failed to load dashboard statistics.');
       } finally {
@@ -392,7 +394,11 @@ const Dashboard = () => {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'} />
                     <XAxis dataKey="month" tickLine={false} style={{ fontSize: '0.7rem' }} stroke={isDark ? '#94a3b8' : '#64748b'} />
                     <YAxis tickLine={false} axisLine={false} style={{ fontSize: '0.7rem' }} stroke={isDark ? '#94a3b8' : '#64748b'} />
-                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ borderRadius: 6, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '0.8rem' }} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                      contentStyle={{ backgroundColor: '#ffffff', borderRadius: 6, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '0.8rem' }}
+                      labelStyle={{ color: '#000000' }}
+                    />
                     <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
                     <Bar dataKey="income" name="Income" fill="#059669" radius={[2, 2, 0, 0]} />
                     <Bar dataKey="expense" name="Expense" fill="#dc2626" radius={[2, 2, 0, 0]} />

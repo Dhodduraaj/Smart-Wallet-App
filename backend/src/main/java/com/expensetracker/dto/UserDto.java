@@ -16,4 +16,5 @@ public class UserDto {
     private String email;
     private LocalDateTime createdAt;
     private Boolean onboardingCompleted;
+    private String avatar;
 }

@@ -15,6 +15,7 @@ import com.expensetracker.repository.DailyReminderConfigRepository;
 import com.expensetracker.repository.UserRepository;
 import com.expensetracker.security.JwtTokenProvider;
 import com.expensetracker.service.DefaultCashAccountService;
+import com.expensetracker.dto.ChangePasswordRequest;
 import com.expensetracker.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -92,6 +93,7 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .onboardingCompleted(user.getOnboardingCompleted())
+                .avatar(user.getAvatar())
                 .build();
     }
 
@@ -116,6 +118,7 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .onboardingCompleted(user.getOnboardingCompleted())
+                .avatar(user.getAvatar())
                 .build();
     }
 
@@ -160,6 +163,35 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .createdAt(user.getCreatedAt())
                 .onboardingCompleted(user.getOnboardingCompleted())
+                .avatar(user.getAvatar())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new BadRequestException("Current password is incorrect");
+        }
+
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new BadRequestException("New password and confirmation do not match");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+    }
+
+    @Override
+    @Transactional
+    public void updateAvatar(UUID userId, String avatar) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        user.setAvatar(avatar);
+        userRepository.save(user);
     }
 }

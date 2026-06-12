@@ -34,7 +34,8 @@ const Income = () => {
       const params = new URLSearchParams({ page, size: rowsPerPage, sort: 'incomeDate,desc' });
       if (search) params.append('search', search);
       const res = await api.get(`/api/incomes?${params}`);
-      setIncomes(res.data.content || []);
+      const sorted = [...(res.data.content || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setIncomes(sorted);
       setTotalElements(res.data.totalElements || 0);
     } catch {
       toast.error('Failed to load income records');

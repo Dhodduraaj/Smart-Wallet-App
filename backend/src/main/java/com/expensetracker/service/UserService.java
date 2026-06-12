@@ -6,6 +6,8 @@ import com.expensetracker.dto.OnboardingRequest;
 import com.expensetracker.dto.RegisterRequest;
 import com.expensetracker.dto.UserDto;
 
+import com.expensetracker.dto.ChangePasswordRequest;
+
 import java.util.UUID;
 
 public interface UserService {
@@ -13,4 +15,6 @@ public interface UserService {
     AuthResponse login(LoginRequest loginRequest);
     void completeOnboarding(UUID userId, OnboardingRequest onboardingRequest);
     UserDto getUserById(UUID userId);
+    void changePassword(UUID userId, ChangePasswordRequest request);
+    void updateAvatar(UUID userId, String avatar);
 }
