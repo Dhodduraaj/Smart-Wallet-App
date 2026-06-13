@@ -17,6 +17,7 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  Avatar,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
@@ -34,6 +35,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { requestPwaExit } from '../lib/pwaExit';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 260;
 
@@ -46,6 +48,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
   const handleDrawerToggle = () => {
     setMobileOpen((open) => !open);
@@ -145,6 +148,23 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
               >
                 <MenuIcon />
               </IconButton>
+              {user && (
+                <Avatar
+                  src={user.avatar ? `/avatars/${user.avatar}.png` : undefined}
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    mr: 1,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => navigate('/profile')}
+                >
+                  {!user.avatar && (user.fullName?.charAt(0)?.toUpperCase() || 'U')}
+                </Avatar>
+              )}
               <Typography
                 variant="h6"
                 noWrap
@@ -292,7 +312,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
       <SelfTransferDialog open={selfTransferOpen} onClose={() => setSelfTransferOpen(false)} />
 
       <Dialog open={exitDialogOpen} onClose={() => setExitDialogOpen(false)}>
-        <DialogTitle sx={{ fontWeight: 700 }}>Exit Application</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>Exit Smart Wallet</DialogTitle>
         <DialogContent>
           <Typography>Are you sure you want to exit the app?</Typography>
         </DialogContent>
