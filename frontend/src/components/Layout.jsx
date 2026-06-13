@@ -312,7 +312,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
       <SelfTransferDialog open={selfTransferOpen} onClose={() => setSelfTransferOpen(false)} />
 
       <Dialog open={exitDialogOpen} onClose={() => setExitDialogOpen(false)}>
-        <DialogTitle sx={{ fontWeight: 700 }}>Exit Smart Wallet</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>Exit Smart-Wallet</DialogTitle>
         <DialogContent>
           <Typography>Are you sure you want to exit the app?</Typography>
         </DialogContent>

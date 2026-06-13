@@ -176,24 +176,7 @@ const Profile = () => {
   };
 
   const handlePhoneSupport = () => {
-    const whatsappUrl = 'whatsapp://send?phone=+918220920776';
-    const dialerUrl = 'tel:+918220920776';
-    
-    let targetOpened = false;
-    const handleBlur = () => {
-      targetOpened = true;
-      window.removeEventListener('blur', handleBlur);
-    };
-    
-    window.addEventListener('blur', handleBlur);
-    window.location.href = whatsappUrl;
-    
-    setTimeout(() => {
-      window.removeEventListener('blur', handleBlur);
-      if (!targetOpened) {
-        window.location.href = dialerUrl;
-      }
-    }, 1500);
+    window.open('https://wa.me/918220920776', '_blank');
   };
 
   return (
@@ -297,7 +280,7 @@ const Profile = () => {
                 </Typography>
                 {passwordExpanded ? <ExpandLess /> : <ExpandMore />}
               </Box>
-              
+
               <Collapse in={passwordExpanded}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3 }}>
                   <PasswordField
@@ -372,28 +355,41 @@ const Profile = () => {
                             position: 'relative'
                           }}
                         >
-                          <Grid container spacing={1}>
-                            <Grid item xs={12}>
-                              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Bank Name
+                              </Typography>
+                              <Typography variant="body1" sx={{ fontWeight: 700, color: 'text.primary' }}>
                                 {acc.bankName}
                               </Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Branch</Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 600 }}>{acc.branch}</Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>IFSC Code</Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>{acc.ifscCode}</Typography>
-                            </Grid>
-                            <Grid item xs={12} sx={{ mt: 0.5 }}>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Account Number</Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 700, letterSpacing: 1.5 }}>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Branch
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                {acc.branch}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                IFSC Code
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', color: 'text.primary' }}>
+                                {acc.ifscCode}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Account Number
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700, letterSpacing: 1.5, color: 'text.primary' }}>
                                 {acc.accountNumber}
                               </Typography>
-                            </Grid>
-                          </Grid>
-                          
+                            </Box>
+                          </Box>
+
                           <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 1.5, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                             <IconButton
                               size="small"
@@ -505,7 +501,7 @@ const Profile = () => {
                     fullWidth
                     sx={{ py: 1.25, fontWeight: 600, borderRadius: 2, justifyContent: 'flex-start', px: 3 }}
                   >
-                    Email: dhodduraajsp@gmail.com
+                    dhodduraajsp@gmail.com
                   </Button>
                   <Button
                     variant="outlined"
@@ -515,7 +511,7 @@ const Profile = () => {
                     fullWidth
                     sx={{ py: 1.25, fontWeight: 600, borderRadius: 2, justifyContent: 'flex-start', px: 3 }}
                   >
-                    Phone: +91 8220920776
+                    +91 8220920776
                   </Button>
                 </Box>
               </Collapse>
