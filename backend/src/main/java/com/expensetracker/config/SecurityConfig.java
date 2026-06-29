@@ -76,9 +76,19 @@ public class SecurityConfig {
         
         String allowedOriginsEnv = System.getenv("ALLOWED_ORIGINS");
         if (allowedOriginsEnv != null && !allowedOriginsEnv.trim().isEmpty()) {
-            configuration.setAllowedOrigins(Arrays.stream(allowedOriginsEnv.split(","))
-                    .map(String::trim)
-                    .toList());
+            java.util.List<String> origins = new java.util.ArrayList<>(
+                    Arrays.stream(allowedOriginsEnv.split(","))
+                            .map(String::trim)
+                            .toList()
+            );
+            // Always allow local Capacitor origins for mobile app connections
+            if (!origins.contains("http://localhost")) {
+                origins.add("http://localhost");
+            }
+            if (!origins.contains("capacitor://localhost")) {
+                origins.add("capacitor://localhost");
+            }
+            configuration.setAllowedOrigins(origins);
         } else {
             configuration.setAllowedOriginPatterns(Collections.singletonList("*"));
         }
