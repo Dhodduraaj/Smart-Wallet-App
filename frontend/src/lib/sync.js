@@ -17,8 +17,8 @@ export async function sync() {
 
   const store = getStoredData();
   
-  // Only sync if email is set and user is logged in
-  if (!store.email || !store.isLoggedIn) {
+  // Only sync if email is set and user is authenticated
+  if (!store.email || !store.isAuthenticated) {
     return;
   }
 
@@ -29,7 +29,35 @@ export async function sync() {
     const isNewSync = !store.lastSync;
     const url = isNewSync ? '/sync/register' : '/sync/update';
     
-    const response = await apiNetwork.post(url, store);
+    // Construct transaction payload
+    const rawExpenses = store.data.expenses || [];
+    const rawIncomes = store.data.incomes || [];
+    const transactions = [
+      ...rawExpenses.map(e => ({ ...e, transactionType: 'expense' })),
+      ...rawIncomes.map(i => ({ ...i, transactionType: 'income' }))
+    ];
+    
+    // Construct categories payload
+    const categories = [...new Set(rawExpenses.map(e => e.category).filter(Boolean))];
+    
+    // Conforms to sync payload schema
+    const payload = {
+      localUserId: store.localUserId, // for backward-compatible routing in SyncController
+      email: store.email,
+      userId: store.localUserId,
+      syncedAt: new Date().toISOString(),
+      payload: {
+        accounts: store.data.accounts || [],
+        transactions,
+        categories,
+        reminders: store.data.reminders || [],
+        transfers: store.data.transfers || [],
+        profile: store.data.profile || {},
+        settings: store.data.settings || {}
+      }
+    };
+    
+    const response = await apiNetwork.post(url, payload);
     if (response.status === 200) {
       store.lastSync = new Date().toISOString();
       saveStoredData(store);

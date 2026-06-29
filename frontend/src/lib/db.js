@@ -11,16 +11,27 @@ export function generateUUID() {
 
 export function getStoredData() {
   const raw = localStorage.getItem(STORAGE_KEY);
+  let store;
   if (!raw) {
-    // Silently initialize local user
-    const initial = {
+    // Silently initialize local user with default auth state and SYSTEM Cash account
+    store = {
       localUserId: generateUUID(),
       email: "",
-      isLoggedIn: true,
+      isAuthenticated: false,
+      createdAt: new Date().toISOString(),
       lastSync: null,
       data: {
         profile: { fullName: "Local User", email: "", onboardingCompleted: false },
-        accounts: [],
+        accounts: [
+          {
+            id: generateUUID(),
+            accountName: "Cash",
+            accountType: "SYSTEM",
+            locked: true,
+            currentBalance: 0,
+            deleted: false
+          }
+        ],
         expenses: [],
         incomes: [],
         reminders: [],
@@ -30,10 +41,35 @@ export function getStoredData() {
         }
       }
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-    return initial;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  } else {
+    store = JSON.parse(raw);
   }
-  return JSON.parse(raw);
+
+  // Enforcement logic: Every user must always have a default Cash account
+  if (store.data && store.data.accounts) {
+    const hasSystemAccount = store.data.accounts.some(a => a.accountType === 'SYSTEM');
+    if (!hasSystemAccount) {
+      // Find if there is an existing cash account we can upgrade, or create a new one
+      const cashIndex = store.data.accounts.findIndex(a => a.accountType === 'CASH' || a.accountName === 'Cash');
+      if (cashIndex !== -1) {
+        store.data.accounts[cashIndex].accountType = 'SYSTEM';
+        store.data.accounts[cashIndex].locked = true;
+      } else {
+        store.data.accounts.push({
+          id: generateUUID(),
+          accountName: "Cash",
+          accountType: "SYSTEM",
+          locked: true,
+          currentBalance: 0,
+          deleted: false
+        });
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    }
+  }
+
+  return store;
 }
 
 export function saveStoredData(obj) {
@@ -77,6 +113,16 @@ export async function saveLocalAccount(accountData, isSynced = false) {
   const accounts = store.data.accounts || [];
   const index = accounts.findIndex(a => a.id === id);
 
+  // Enforcement: default cash account cannot be renamed
+  if (index !== -1) {
+    const existing = accounts[index];
+    if (existing.accountType === 'SYSTEM' || existing.locked === true) {
+      accountData.accountName = existing.accountName; // lock name to original name
+      accountData.accountType = 'SYSTEM';
+      accountData.locked = true;
+    }
+  }
+
   const updatedData = {
     ...accountData,
     id,
@@ -115,9 +161,16 @@ export async function adjustLocalAccountBalance(accountId, amountChange, isSynce
 
 export async function deleteLocalAccount(id, isSynced = false) {
   const store = getStoredData();
+  const accounts = store.data.accounts || [];
+  const acc = accounts.find(a => a.id === id);
   
+  // Enforcement: default cash account cannot be deleted
+  if (acc && (acc.accountType === 'SYSTEM' || acc.locked === true || acc.accountName === 'Cash')) {
+    throw new Error('Default Cash account cannot be deleted');
+  }
+
   // Complete removal from array (local always wins)
-  store.data.accounts = (store.data.accounts || []).filter(a => a.id !== id);
+  store.data.accounts = accounts.filter(a => a.id !== id);
 
   // Complete removal of dependent transactions
   store.data.expenses = (store.data.expenses || []).filter(e => e.accountId !== id);
@@ -535,7 +588,7 @@ export async function getLocalDashboardSummary() {
         const d = new Date(inc.incomeDate);
         return d.getFullYear() === y && d.getMonth() === m;
       })
-      .reduce((sum, inc) => sum + parseFloat(inc.amount || 0), 0);
+      .reduce((sum, inc) => sum + parseFloat(inc.incomeDate || 0), 0);
 
     monthlyTrends.push({
       month: monthName,
@@ -623,10 +676,22 @@ export async function clearLocalDb() {
 export async function restoreDbFromBackup(backupObj) {
   if (!backupObj) return;
   const store = getStoredData();
+  
+  // Safely restore backend schema
+  let restoredData = backupObj.payload || backupObj;
+  if (restoredData.data) {
+    restoredData = restoredData.data;
+  }
+  
   const merged = {
     ...store,
-    ...backupObj,
-    isLoggedIn: true
+    email: backupObj.email || store.email,
+    isAuthenticated: true,
+    data: {
+      ...store.data,
+      ...restoredData
+    }
   };
+  
   saveStoredData(merged);
 }

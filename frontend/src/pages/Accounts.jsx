@@ -13,6 +13,7 @@ import {
 import { toast } from 'react-hot-toast';
 
 const accountTypeIcons = {
+  SYSTEM: <WalletOutlined />,
   CASH: <WalletOutlined />,
   BANK: <AccountBalanceOutlined />,
   CREDIT_CARD: <CreditCardOutlined />,
@@ -20,6 +21,7 @@ const accountTypeIcons = {
 };
 
 const accountTypeColors = {
+  SYSTEM: '#10b981',
   CASH: '#10b981',
   BANK: '#6366f1',
   CREDIT_CARD: '#f59e0b',
@@ -32,7 +34,7 @@ const MANUAL_ACCOUNT_TYPES = [
   { value: 'OTHERS', label: 'Others' },
 ];
 
-const emptyForm = { accountName: '', accountType: 'BANK', currentBalance: '0' };
+const emptyForm = { accountName: '', accountType: 'BANK', currentBalance: '0', locked: false };
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState([]);
@@ -69,19 +71,23 @@ const Accounts = () => {
       accountName: acc.accountName,
       accountType: acc.accountType,
       currentBalance: String(acc.currentBalance),
+      locked: acc.locked === true,
     });
     setDialogOpen(true);
   };
 
-  const isCashAccount = (acc) => acc.accountType === 'CASH';
-  const editingCash = editId && form.accountType === 'CASH';
+  const isLockedAccount = (acc) => acc.accountType === 'SYSTEM' || acc.locked === true;
+  const editingLocked = editId && (form.accountType === 'SYSTEM' || form.locked === true);
 
   const handleSave = async () => {
     if (!form.accountName.trim()) { toast.error('Account name is required'); return; }
-    if (!editId && form.accountType === 'CASH') {
-      toast.error('Cash account is created automatically');
+    
+    // Enforce that system accounts cannot be manually created or type change
+    if (!editId && (form.accountType === 'SYSTEM' || form.accountType === 'CASH')) {
+      toast.error('The default Cash account is created automatically');
       return;
     }
+    
     setSubmitting(true);
     try {
       const payload = { ...form, currentBalance: parseFloat(form.currentBalance) || 0 };
@@ -99,13 +105,18 @@ const Accounts = () => {
   };
 
   const handleDelete = async (id, acc) => {
-    if (isCashAccount(acc)) {
+    if (isLockedAccount(acc)) {
       toast.error('The default Cash account cannot be deleted');
       return;
     }
     if (!window.confirm('Delete this account? Related transactions may be affected.')) return;
-    try { await api.delete(`/api/accounts/${id}`); toast.success('Account deleted'); fetchAccounts(); }
-    catch (err) { toast.error(err.response?.data?.message || 'Failed to delete account'); }
+    try {
+      await api.delete(`/api/accounts/${id}`);
+      toast.success('Account deleted');
+      fetchAccounts();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete account');
+    }
   };
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', pt: 10 }}><CircularProgress /></Box>;
@@ -138,7 +149,7 @@ const Accounts = () => {
       >
         {accounts.map((acc) => {
           const color = accountTypeColors[acc.accountType] || '#6b7280';
-          const cash = isCashAccount(acc);
+          const locked = isLockedAccount(acc);
           return (
             <Card key={acc.id} sx={{ position: 'relative', overflow: 'hidden', borderTop: `3px solid ${color}`, width: '100%' }}>
               <CardContent sx={{ p: 3 }}>
@@ -150,7 +161,7 @@ const Accounts = () => {
                     <IconButton size="small" onClick={() => openEdit(acc)} aria-label="Edit account">
                       <EditOutlined fontSize="small" />
                     </IconButton>
-                    {!cash && (
+                    {!locked && (
                       <IconButton size="small" color="error" onClick={() => handleDelete(acc.id, acc)} aria-label="Delete account">
                         <DeleteOutlineOutlined fontSize="small" />
                       </IconButton>
@@ -170,7 +181,7 @@ const Accounts = () => {
             <AccountBalanceOutlined sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
             <Typography variant="h6" color="text.secondary">No accounts yet</Typography>
             <Typography variant="body2" color="text.disabled" sx={{ mb: 2 }}>
-              Your Cash account is created automatically. Add a bank or card account to get started.
+              Your default SYSTEM Cash account will be created automatically.
             </Typography>
             <Button variant="contained" startIcon={<AddOutlined />} onClick={openCreate}>Add Account</Button>
           </Card>
@@ -186,15 +197,15 @@ const Accounts = () => {
             onChange={(e) => setForm({ ...form, accountName: e.target.value })}
             required
             fullWidth
-            disabled={editingCash}
+            disabled={editingLocked}
           />
-          {editingCash ? (
+          {editingLocked ? (
             <TextField
               label="Account Type"
-              value="Cash (default)"
+              value="Cash (SYSTEM Locked)"
               fullWidth
               disabled
-              helperText="Default cash account — type cannot be changed"
+              helperText="Default cash account — name and type cannot be changed"
             />
           ) : (
             <TextField

@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import api from '../lib/api';
+import { generatePdfReportLocal } from '../lib/pdf';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import {
   Box, Typography, Card, CardContent, Button, TextField, Grid, CircularProgress,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Divider,
-  Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem,
+  FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { DownloadOutlined, AssessmentOutlined, FilterListOutlined } from '@mui/icons-material';
+import { DownloadOutlined, AssessmentOutlined } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 
 const Reports = () => {
@@ -20,10 +21,10 @@ const Reports = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [filterTransactionType, setFilterTransactionType] = useState('');
-  const [filterCategory, setFilterCategory] = useState('none');
+  const [filterCategory, setFilterCategory] = useState('');
 
+  // Fetch unfiltered report data for the selected date range
   const fetchReport = async () => {
     if (!startDate || !endDate) { toast.error('Select both dates'); return; }
     setLoading(true);
@@ -34,6 +35,46 @@ const Reports = () => {
     finally { setLoading(false); }
   };
 
+  // Run initial fetch on mount
+  useEffect(() => {
+    fetchReport();
+  }, []);
+
+  // Live client-side reactive filter calculation (Single Source of Truth)
+  const filteredReportData = useMemo(() => {
+    if (!reportData) return null;
+
+    let expenses = [...(reportData.expenses || [])];
+    let incomes = [...(reportData.incomes || [])];
+
+    // Apply category filter to expenses
+    if (filterCategory && filterCategory !== 'none') {
+      expenses = expenses.filter(
+        e => (e.category || '').toLowerCase() === filterCategory.toLowerCase()
+      );
+    }
+
+    // Apply transaction type filter
+    if (filterTransactionType === 'income') {
+      expenses = [];
+    } else if (filterTransactionType === 'expense') {
+      incomes = [];
+    }
+
+    const totalIncome = incomes.reduce((sum, inc) => sum + parseFloat(inc.amount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+    const netSavings = totalIncome - totalExpenses;
+
+    return {
+      ...reportData,
+      expenses,
+      incomes,
+      totalIncome,
+      totalExpenses,
+      netSavings
+    };
+  }, [reportData, filterTransactionType, filterCategory]);
+
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -43,18 +84,16 @@ const Reports = () => {
     });
   };
 
+  // Generate and download the PDF locally from the filtered data
   const downloadPdf = async () => {
+    if (!filteredReportData) return;
     setDownloading(true);
     try {
-      let url = `/api/reports/pdf?startDate=${startDate}&endDate=${endDate}`;
-      if (filterTransactionType) url += `&transactionType=${filterTransactionType}`;
-      if (filterCategory && filterCategory !== 'none') url += `&category=${filterCategory}`;
-      if (filterCategory === 'none') url += `&omitCategory=true`;
-
-      const res = await api.get(url, { responseType: 'blob' });
+      const omitCategory = filterCategory === 'none';
+      const pdfBlob = generatePdfReportLocal(filteredReportData, omitCategory);
 
       if (Capacitor.getPlatform() === 'android') {
-        const base64Result = await blobToBase64(new Blob([res.data]));
+        const base64Result = await blobToBase64(pdfBlob);
         const base64Data = base64Result.split(',')[1];
         const filename = `financial_report_${startDate}_to_${endDate}.pdf`;
 
@@ -72,7 +111,7 @@ const Reports = () => {
 
         toast.success('PDF saved to Downloads folder');
       } else {
-        const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+        const blobUrl = window.URL.createObjectURL(pdfBlob);
         const link = document.createElement('a');
         link.href = blobUrl;
         link.setAttribute('download', `financial_report_${startDate}_to_${endDate}.pdf`);
@@ -120,29 +159,69 @@ const Reports = () => {
         Reports
       </Typography>
 
-      {/* Date Controls */}
+      {/* Date & Filter Controls (WYSIWYG Filters Panel) */}
       <Card sx={{ mb: 4, borderRadius: 1.5 }}>
         <CardContent sx={{ p: 2.5 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Generate Financial Report</Typography>
-          <Grid container spacing={2} alignItems="center">
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Report Options</Typography>
+          <Grid container spacing={2.5} alignItems="center">
             <Grid item xs={12} sm={3}>
               <TextField label="Start Date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth size="small" InputLabelProps={{ shrink: true }} />
             </Grid>
             <Grid item xs={12} sm={3}>
               <TextField label="End Date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth size="small" InputLabelProps={{ shrink: true }} />
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Button size="small" variant="outlined" onClick={() => setPreset('today')}>Today</Button>
-                <Button size="small" variant="outlined" onClick={() => setPreset('week')}>This Week</Button>
-                <Button size="small" variant="outlined" onClick={() => setPreset('month')}>This Month</Button>
-                <Button size="small" variant="outlined" onClick={() => setPreset('year')}>This Year</Button>
-                <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-                <Button variant="outlined" startIcon={<FilterListOutlined />} onClick={() => setFilterDialogOpen(true)}>
-                  Filters
-                </Button>
+
+            {/* Live Filter Dropdown 1 */}
+            <Grid item xs={12} sm={3}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Transaction Type</InputLabel>
+                <Select
+                  value={filterTransactionType}
+                  label="Transaction Type"
+                  onChange={(e) => setFilterTransactionType(e.target.value)}
+                >
+                  <MenuItem value="">All Transactions</MenuItem>
+                  <MenuItem value="income">Income Only</MenuItem>
+                  <MenuItem value="expense">Expenses Only</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* Live Filter Dropdown 2 */}
+            <Grid item xs={12} sm={3}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Expense Category</InputLabel>
+                <Select
+                  value={filterCategory}
+                  label="Expense Category"
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  disabled={filterTransactionType === 'income'}
+                >
+                  <MenuItem value="none">None (No Category Col)</MenuItem>
+                  <MenuItem value="">All Categories</MenuItem>
+                  <MenuItem value="Food">Food</MenuItem>
+                  <MenuItem value="Transport">Transport</MenuItem>
+                  <MenuItem value="Shopping">Shopping</MenuItem>
+                  <MenuItem value="Medical">Medical</MenuItem>
+                  <MenuItem value="Education">Education</MenuItem>
+                  <MenuItem value="Entertainment">Entertainment</MenuItem>
+                  <MenuItem value="Bills">Bills</MenuItem>
+                  <MenuItem value="Fuel">Fuel</MenuItem>
+                  <MenuItem value="Others">Others</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button size="small" variant="outlined" onClick={() => setPreset('today')}>Today</Button>
+                  <Button size="small" variant="outlined" onClick={() => setPreset('week')}>This Week</Button>
+                  <Button size="small" variant="outlined" onClick={() => setPreset('month')}>This Month</Button>
+                  <Button size="small" variant="outlined" onClick={() => setPreset('year')}>This Year</Button>
+                </Box>
                 <Button variant="contained" onClick={fetchReport} disabled={loading} startIcon={<AssessmentOutlined />}>
-                  {loading ? <CircularProgress size={20} /> : 'View Report'}
+                  {loading ? <CircularProgress size={20} /> : 'Fetch Report Date Range'}
                 </Button>
               </Box>
             </Grid>
@@ -150,14 +229,15 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      {/* Report Display */}
-      {reportData && (
+      {/* Reactive Report Display */}
+      {filteredReportData && (
         <>
+          {/* Preview Summary */}
           <Box sx={summaryGridSx}>
             {[
-              { label: 'Total Income', value: `₹${reportData.totalIncome}`, color: '#059669' },
-              { label: 'Total Expenses', value: `₹${reportData.totalExpenses}`, color: '#dc2626' },
-              { label: 'Net Savings', value: `₹${reportData.netSavings}`, color: reportData.netSavings >= 0 ? '#059669' : '#dc2626' },
+              { label: 'Total Income', value: `₹${filteredReportData.totalIncome.toFixed(2)}`, color: '#059669' },
+              { label: 'Total Expenses', value: `₹${filteredReportData.totalExpenses.toFixed(2)}`, color: '#dc2626' },
+              { label: 'Net Balance', value: `₹${filteredReportData.netSavings.toFixed(2)}`, color: filteredReportData.netSavings >= 0 ? '#059669' : '#dc2626' },
             ].map((c, i) => (
               <Card key={i} sx={{ borderRadius: 1.5, width: '100%', minWidth: 0 }}>
                 <CardContent sx={{ p: { xs: 2, sm: 2.5 }, textAlign: 'center' }}>
@@ -181,19 +261,19 @@ const Reports = () => {
             ))}
           </Box>
 
-          {/* Expenses Table */}
-          {reportData.expenses?.length > 0 && (
+          {/* Expenses Preview List */}
+          {filterTransactionType !== 'income' && filteredReportData.expenses?.length > 0 && (
             <Card sx={{ mb: 4, borderRadius: 1.5 }}>
               <CardContent sx={{ p: 2.5 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Expenses ({reportData.expenses.length})</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Expenses ({filteredReportData.expenses.length})</Typography>
                 <TableContainer sx={{ width: '100%', overflowX: 'auto' }}>
                   <Table size="small" sx={{ minWidth: 480 }}>
                     <TableHead>
                       <TableRow><TableCell>Date</TableCell><TableCell>Description</TableCell><TableCell>Category</TableCell><TableCell align="right">Amount</TableCell></TableRow>
                     </TableHead>
                     <TableBody>
-                      {reportData.expenses.map((e) => (
-                        <TableRow key={e.id}><TableCell>{e.expenseDate}</TableCell><TableCell>{e.description}</TableCell><TableCell>{e.category}</TableCell><TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>₹{e.amount}</TableCell></TableRow>
+                      {filteredReportData.expenses.map((e) => (
+                        <TableRow key={e.id}><TableCell>{e.expenseDate}</TableCell><TableCell>{e.description}</TableCell><TableCell>{e.category}</TableCell><TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>₹{parseFloat(e.amount).toFixed(2)}</TableCell></TableRow>
                       ))}
                     </TableBody>
                   </Table>
@@ -202,17 +282,17 @@ const Reports = () => {
             </Card>
           )}
 
-          {/* Income Table */}
-          {reportData.incomes?.length > 0 && (
+          {/* Income Preview List */}
+          {filterTransactionType !== 'expense' && filteredReportData.incomes?.length > 0 && (
             <Card sx={{ mb: 4, borderRadius: 1.5 }}>
               <CardContent sx={{ p: 2.5 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Income ({reportData.incomes.length})</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Income ({filteredReportData.incomes.length})</Typography>
                 <TableContainer sx={{ width: '100%', overflowX: 'auto' }}>
                   <Table size="small" sx={{ minWidth: 480 }}>
                     <TableHead><TableRow><TableCell>Date</TableCell><TableCell>Description</TableCell><TableCell>Account</TableCell><TableCell align="right">Amount</TableCell></TableRow></TableHead>
                     <TableBody>
-                      {reportData.incomes.map((inc) => (
-                        <TableRow key={inc.id}><TableCell>{inc.incomeDate}</TableCell><TableCell>{inc.description}</TableCell><TableCell>{inc.accountName}</TableCell><TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>₹{inc.amount}</TableCell></TableRow>
+                      {filteredReportData.incomes.map((inc) => (
+                        <TableRow key={inc.id}><TableCell>{inc.incomeDate}</TableCell><TableCell>{inc.description}</TableCell><TableCell>{inc.accountName}</TableCell><TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>₹{parseFloat(inc.amount).toFixed(2)}</TableCell></TableRow>
                       ))}
                     </TableBody>
                   </Table>
@@ -221,68 +301,22 @@ const Reports = () => {
             </Card>
           )}
 
-          {/* Download PDF */}
+          {/* Fallback if no transactions match filters */}
+          {filteredReportData.expenses?.length === 0 && filteredReportData.incomes?.length === 0 && (
+            <Card sx={{ p: 6, mb: 4, textAlign: 'center' }}>
+              <Typography variant="h6" color="text.secondary">No matching records found for the selected filters</Typography>
+            </Card>
+          )}
+
+          {/* Export PDF Button */}
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
             <Button variant="contained" size="large" startIcon={<DownloadOutlined />} onClick={downloadPdf} disabled={downloading}
               sx={{ px: 4, py: 1.5, borderRadius: 1.5 }}>
-              {downloading ? <CircularProgress size={20} /> : 'Download PDF Report'}
+              {downloading ? <CircularProgress size={20} /> : 'Export PDF Report'}
             </Button>
           </Box>
         </>
       )}
-
-      {/* Filter Dialog */}
-      <Dialog open={filterDialogOpen} onClose={() => setFilterDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 600 }}>PDF Filter Options</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-          <FormControl fullWidth size="small">
-            <InputLabel>Transaction Type</InputLabel>
-            <Select
-              value={filterTransactionType}
-              label="Transaction Type"
-              onChange={(e) => setFilterTransactionType(e.target.value)}
-            >
-              <MenuItem value="">All Transactions</MenuItem>
-              <MenuItem value="income">Income Only</MenuItem>
-              <MenuItem value="expense">Expenses Only</MenuItem>
-            </Select>
-          </FormControl>
-
-          <FormControl fullWidth size="small">
-            <InputLabel>Expense Category</InputLabel>
-            <Select
-              value={filterCategory}
-              label="Expense Category"
-              onChange={(e) => setFilterCategory(e.target.value)}
-              disabled={filterTransactionType === 'income'}
-            >
-              <MenuItem value="none">None (No Category Column)</MenuItem>
-              <MenuItem value="">All Categories</MenuItem>
-              <MenuItem value="Food">Food</MenuItem>
-              <MenuItem value="Transport">Transport</MenuItem>
-              <MenuItem value="Shopping">Shopping</MenuItem>
-              <MenuItem value="Medical">Medical</MenuItem>
-              <MenuItem value="Education">Education</MenuItem>
-              <MenuItem value="Entertainment">Entertainment</MenuItem>
-              <MenuItem value="Bills">Bills</MenuItem>
-              <MenuItem value="Fuel">Fuel</MenuItem>
-              <MenuItem value="Others">Others</MenuItem>
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setFilterDialogOpen(false)} variant="contained" color="error">Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              setFilterDialogOpen(false);
-              toast.success('Filters applied to PDF download');
-            }}
-          >
-            Apply Filters
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

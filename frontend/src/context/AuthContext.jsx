@@ -13,13 +13,16 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        // This will silently create a local user if none exists
         const store = getStoredData();
-        if (store && store.isLoggedIn && store.data && store.data.profile) {
+        // Startup logic: IF isAuthenticated == true -> go to home, ELSE -> show login screen
+        if (store && store.isAuthenticated === true && store.data && store.data.profile) {
           setUser(store.data.profile);
+        } else {
+          setUser(null);
         }
       } catch (err) {
         console.error('[Auth Bootstrap] Failed to load local profile:', err);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -43,42 +46,35 @@ export const AuthProvider = ({ children }) => {
     try {
       const store = getStoredData();
       
-      // Save email locally and set isLoggedIn to true
+      // Save credentials locally and set isAuthenticated to true
       store.email = email;
-      store.isLoggedIn = true;
+      store.isAuthenticated = true;
       if (!store.data.profile) {
         store.data.profile = {};
       }
       store.data.profile.email = email;
-      store.data.profile.fullName = email.split('@')[0]; // Fallback name
+      store.data.profile.fullName = email.split('@')[0]; // Simple fallback name
       saveStoredData(store);
       
       const localProfile = store.data.profile;
       setUser(localProfile);
 
-      // Attempt to pull existing backup in the background (if online)
+      // Try pulling backup from server if online
       if (navigator.onLine) {
         try {
           const response = await api.get(`/sync/pull?email=${encodeURIComponent(email)}`);
           if (response.status === 200 && response.data) {
-            // Restore data from backup (Local always wins if client already has transactions, 
-            // but for a clean reinstall / fresh boot, restore the backup)
-            const localData = store.data;
-            const hasLocalTx = (localData.expenses && localData.expenses.length > 0) || 
-                               (localData.accounts && localData.accounts.length > 0);
-            
-            if (!hasLocalTx) {
-              await restoreDbFromBackup(response.data);
-              const updatedStore = getStoredData();
-              setUser(updatedStore.data.profile);
-            }
+            // Restore from sync backup
+            await restoreDbFromBackup(response.data);
+            const updatedStore = getStoredData();
+            setUser(updatedStore.data.profile);
           }
         } catch (pullErr) {
           console.warn('[Auth Login] Failed to pull user backup or user has no backup yet:', pullErr);
         }
       }
 
-      // Trigger sync in background
+      // Trigger background sync
       setTimeout(() => {
         sync();
       }, 100);
@@ -94,9 +90,9 @@ export const AuthProvider = ({ children }) => {
     try {
       const store = getStoredData();
       
-      // Save details locally and set isLoggedIn to true
+      // Save details locally and set isAuthenticated to true
       store.email = email;
-      store.isLoggedIn = true;
+      store.isAuthenticated = true;
       if (!store.data.profile) {
         store.data.profile = {};
       }
@@ -107,7 +103,7 @@ export const AuthProvider = ({ children }) => {
       const localProfile = store.data.profile;
       setUser(localProfile);
 
-      // Trigger sync in background
+      // Trigger background sync
       setTimeout(() => {
         sync();
       }, 100);
@@ -125,7 +121,6 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshUser = async () => {
-    // Backend is dumb storage now, refreshUser just returns local profile
     const store = getStoredData();
     const localProfile = store.data?.profile || { fullName: 'Local User', email: '' };
     setUser(localProfile);
