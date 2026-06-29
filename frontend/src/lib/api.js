@@ -274,6 +274,27 @@ const customOfflineAdapter = async (config) => {
       const pdfBlob = generatePdfReportLocal(reportDto, omitCategory === 'true');
       return mockResponse(pdfBlob);
     }
+
+    // 9. Onboarding completion
+    if (cleanUrl.includes('/api/onboarding/complete') && method === 'POST') {
+      const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const accounts = payload?.accounts || [];
+      
+      // Save all provided accounts
+      for (const acc of accounts) {
+        await localDb.saveLocalAccount(acc, false);
+      }
+      
+      // Update onboarding status in profile
+      const profile = await localDb.getLocalProfile();
+      if (profile) {
+        profile.onboardingCompleted = true;
+        await localDb.saveLocalProfile(profile, false);
+      }
+      
+      setTimeout(() => sync(), 100);
+      return mockResponse({ success: true });
+    }
   } catch (err) {
     console.error(`Error processing offline request for ${url}:`, err);
     return Promise.reject({

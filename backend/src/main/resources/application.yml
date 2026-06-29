@@ -5,9 +5,9 @@ spring:
   application:
     name: expense-tracker
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: ${DB_URL:jdbc:h2:mem:testdb}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
   web:
     resources:
@@ -27,10 +27,10 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
   mail:
-    host: ${MAIL_HOST}
-    port: ${MAIL_PORT}
-    username: ${EMAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${EMAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -43,8 +43,8 @@ spring:
 app:
   jwt:
     # 512-bit strong base64 encoded secret key
-    secret: ${JWT_SECRET}
-    expiration-ms: ${JWT_EXPIRATION}
+    secret: ${JWT_SECRET:4zV7A9gK2mN5qR8uW1xY0zC3bV6n9qRvY2t5w8y/B?E(G+KbPeShVkYp3s6v9y$B}
+    expiration-ms: ${JWT_EXPIRATION:86400000}
   firebase:
     enabled: ${FIREBASE_ENABLED:false}
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
