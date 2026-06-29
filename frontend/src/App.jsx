@@ -196,7 +196,11 @@ const AppRoutes = ({ darkMode, toggleDarkMode }) => {
 };
 
 const SyncManager = () => {
+  const { user } = useAuth();
+
   useEffect(() => {
+    if (!user) return;
+
     // Initial sync
     sync();
 
@@ -215,7 +219,7 @@ const SyncManager = () => {
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
     };
-  }, []);
+  }, [user]);
 
   return null;
 };

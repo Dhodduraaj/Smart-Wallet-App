@@ -26,7 +26,12 @@ export async function sync() {
   if (isSyncing) return;
   if (!navigator.onLine) return;
   const token = localStorage.getItem('token');
-  if (!token) return; // Not logged in
+  const isAuthenticated = !!token;
+  const isLoggingIn = window.__isLoggingIn === true;
+
+  if (!isAuthenticated || isLoggingIn) {
+    return; // Gate sync
+  }
 
   isSyncing = true;
   console.info('[Sync Engine] Starting background sync...');

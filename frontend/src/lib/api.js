@@ -288,17 +288,16 @@ const customOfflineAdapter = async (config) => {
   }
 
   // Fallback to network
-  const adapter = config.adapter || defaultAdapter;
-  if (typeof adapter === 'function') {
-    return adapter(config);
-  }
-  
+  // To prevent infinite recursion, we MUST remove this adapter from config before calling defaultAdapter!
+  const netConfig = { ...config };
+  delete netConfig.adapter;
+
   if (typeof defaultAdapter === 'function') {
-    return defaultAdapter(config);
+    return defaultAdapter(netConfig);
   } else if (Array.isArray(defaultAdapter)) {
-    return defaultAdapter[0](config);
+    return defaultAdapter[0](netConfig);
   }
-  return axios.defaults.adapter(config);
+  return axios.defaults.adapter(netConfig);
 };
 
 // Request interceptor to add the JWT token and custom adapter
