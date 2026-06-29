@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import api from '../lib/api';
-import { getStoredData, saveStoredData, restoreDbFromBackup, clearLocalDb } from '../lib/db';
+import { getStoredData, saveStoredData, restoreDbFromBackup, clearLocalDb, generateUUID } from '../lib/db';
 import { sync } from '../lib/sync';
 
 const AuthContext = createContext(null);
@@ -46,8 +46,36 @@ export const AuthProvider = ({ children }) => {
     try {
       const store = getStoredData();
       
-      // Save credentials locally and set isAuthenticated to true
-      store.email = email;
+      // If logging in with a new email, reset data safely to prevent cross-contamination
+      const isDifferentEmail = store.email && store.email.toLowerCase() !== email.toLowerCase();
+      if (isDifferentEmail) {
+        store.localUserId = generateUUID();
+        store.email = email;
+        store.lastSync = null;
+        store.data = {
+          profile: { fullName: email.split('@')[0], email: email, onboardingCompleted: false },
+          accounts: [
+            {
+              id: generateUUID(),
+              accountName: "Cash",
+              accountType: "SYSTEM",
+              locked: true,
+              currentBalance: 0,
+              deleted: false
+            }
+          ],
+          expenses: [],
+          incomes: [],
+          reminders: [],
+          transfers: [],
+          settings: {
+            dailyReminderConfig: { enabled: false, reminderTime: '21:00', reminderZoneId: 'UTC' }
+          }
+        };
+      } else {
+        store.email = email;
+      }
+      
       store.isAuthenticated = true;
       if (!store.data.profile) {
         store.data.profile = {};
@@ -115,7 +143,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    clearLocalDb();
+    const store = getStoredData();
+    store.isAuthenticated = false;
+    saveStoredData(store);
     setUser(null);
     window.dispatchEvent(new Event('auth-logout'));
   };
