@@ -34,7 +34,7 @@ public class HealthController {
         } catch (Exception ex) {
             status.put("status", "DOWN");
             status.put("database", "DOWN");
-            status.put("error", ex.getMessage());
+            status.put("error", "Database connection check failed");
             return ResponseEntity.status(500).body(status);
         }
         

@@ -8,6 +8,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
 import java.util.List;
 
 @Component
@@ -17,9 +19,45 @@ public class DatabasePasswordMigration implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final DataSource dataSource;
 
     @Override
     public void run(String... args) {
+        try (Connection conn = dataSource.getConnection()) {
+            String url = conn.getMetaData().getURL();
+            if (url == null || (!url.startsWith("jdbc:postgresql://") && !url.startsWith("jdbc:h2:"))) {
+                throw new IllegalStateException("Database URL configuration is malformed or invalid: " + url);
+            }
+            
+            String host = "unknown";
+            String dbName = "unknown";
+            if (url.startsWith("jdbc:postgresql://")) {
+                String cleanUrl = url.substring("jdbc:postgresql://".length());
+                int slashIdx = cleanUrl.indexOf('/');
+                if (slashIdx != -1) {
+                    String hostPort = cleanUrl.substring(0, slashIdx);
+                    int colonIdx = hostPort.indexOf(':');
+                    host = colonIdx != -1 ? hostPort.substring(0, colonIdx) : hostPort;
+                    
+                    String pathQuery = cleanUrl.substring(slashIdx + 1);
+                    int qIdx = pathQuery.indexOf('?');
+                    dbName = qIdx != -1 ? pathQuery.substring(0, qIdx) : pathQuery;
+                }
+            } else if (url.startsWith("jdbc:h2:")) {
+                host = "in-memory-h2";
+                dbName = url;
+            }
+            
+            log.info("==========================================");
+            log.info("DATABASE SECURITY OBSERVABILITY INFO:");
+            log.info("Connected Host: {}", host);
+            log.info("Database Name: {}", dbName);
+            log.info("==========================================");
+        } catch (Exception e) {
+            log.error("CRITICAL: Database configuration validation failed", e);
+            throw new RuntimeException("Database startup validation failed", e);
+        }
+
         log.info("Checking if existing users need password hash upgrade...");
         List<User> users = userRepository.findAll();
         int upgradedCount = 0;
