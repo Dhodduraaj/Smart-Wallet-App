@@ -140,7 +140,16 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-    return () => { cancelled = true; };
+
+    const handleSync = () => {
+      fetchDashboardData();
+    };
+    window.addEventListener('sync-completed', handleSync);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('sync-completed', handleSync);
+    };
   }, []);
 
   if (loading) return <SkeletonDashboard />;

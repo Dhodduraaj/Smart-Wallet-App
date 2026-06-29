@@ -114,7 +114,17 @@ const Expenses = () => {
     };
 
     loadData();
-    return () => { cancelled = true; };
+
+    const handleSync = () => {
+      fetchAccounts().catch(() => {});
+      fetchExpenses().catch(() => {});
+    };
+    window.addEventListener('sync-completed', handleSync);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('sync-completed', handleSync);
+    };
   }, [page, rowsPerPage, search, filterCategory]);
 
   const openCreate = () => {

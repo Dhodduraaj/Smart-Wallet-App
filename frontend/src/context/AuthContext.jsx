@@ -24,7 +24,21 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
     };
     window.addEventListener('auth-logout', handleLogoutEvent);
-    return () => window.removeEventListener('auth-logout', handleLogoutEvent);
+
+    // Listen for sync-completed events to update user state if profile synced
+    const handleSyncCompletedEvent = () => {
+      const storedUser = localStorage.getItem('user');
+      const token = localStorage.getItem('token');
+      if (storedUser && token) {
+        setUser(JSON.parse(storedUser));
+      }
+    };
+    window.addEventListener('sync-completed', handleSyncCompletedEvent);
+
+    return () => {
+      window.removeEventListener('auth-logout', handleLogoutEvent);
+      window.removeEventListener('sync-completed', handleSyncCompletedEvent);
+    };
   }, []);
 
   const login = async (email, password) => {

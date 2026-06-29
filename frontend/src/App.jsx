@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { sync } from './lib/sync';
+
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box, CircularProgress } from '@mui/material';
 import { Toaster } from 'react-hot-toast';
@@ -193,6 +195,31 @@ const AppRoutes = ({ darkMode, toggleDarkMode }) => {
   );
 };
 
+const SyncManager = () => {
+  useEffect(() => {
+    // Initial sync
+    sync();
+
+    // Periodic sync every 30 seconds
+    const interval = setInterval(() => {
+      sync();
+    }, 30000);
+
+    // Sync on network reconnect
+    const handleOnline = () => {
+      sync();
+    };
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  return null;
+};
+
 function App() {
   const [darkMode, setDarkMode] = useState(true);
   const theme = useMemo(() => getTheme(darkMode ? 'dark' : 'light'), [darkMode]);
@@ -213,6 +240,7 @@ function App() {
         }}
       />
       <AuthProvider>
+        <SyncManager />
         <PushNotificationBridge />
         <Router>
           <AppRoutes darkMode={darkMode} toggleDarkMode={toggleDarkMode} />

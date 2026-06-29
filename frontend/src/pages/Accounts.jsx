@@ -50,7 +50,16 @@ const Accounts = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchAccounts(); }, []);
+  useEffect(() => {
+    fetchAccounts();
+    const handleSync = () => {
+      fetchAccounts();
+    };
+    window.addEventListener('sync-completed', handleSync);
+    return () => {
+      window.removeEventListener('sync-completed', handleSync);
+    };
+  }, []);
 
   const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
 

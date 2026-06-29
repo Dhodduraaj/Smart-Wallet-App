@@ -102,7 +102,16 @@ const Reminders = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    const handleSync = () => {
+      fetchData();
+    };
+    window.addEventListener('sync-completed', handleSync);
+    return () => {
+      window.removeEventListener('sync-completed', handleSync);
+    };
+  }, []);
 
   const handleDailyUpdate = async (field, value) => {
     const zoneId = getDeviceTimeZone();

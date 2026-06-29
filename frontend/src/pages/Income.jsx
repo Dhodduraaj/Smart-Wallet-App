@@ -80,7 +80,17 @@ const Income = () => {
     };
 
     loadData();
-    return () => { cancelled = true; };
+
+    const handleSync = () => {
+      fetchAccounts().catch(() => {});
+      fetchIncomes().catch(() => {});
+    };
+    window.addEventListener('sync-completed', handleSync);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('sync-completed', handleSync);
+    };
   }, [page, rowsPerPage, search]);
 
   const openCreate = () => { setEditId(null); setForm({ ...emptyForm, accountId: accounts[0]?.id || '' }); setDialogOpen(true); };
