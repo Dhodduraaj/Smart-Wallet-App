@@ -51,7 +51,7 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
       inc.incomeDate ? inc.incomeDate.toString() : '',
       inc.description || '',
       inc.accountName || '',
-      `₹${inc.amount}`
+      `₹${parseFloat(inc.amount || 0).toFixed(2)}`
     ]);
 
     autoTable(doc, {
@@ -113,7 +113,7 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
       expenseRows = reportDto.expenses.map(exp => [
         exp.expenseDate ? exp.expenseDate.toString() : '',
         exp.description || '',
-        `₹${exp.amount}`
+        `₹${parseFloat(exp.amount || 0).toFixed(2)}`
       ]);
       columnStyles = {
         0: { cellWidth: contentWidth * 0.25 },
@@ -126,7 +126,7 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
         exp.expenseDate ? exp.expenseDate.toString() : '',
         exp.description || '',
         exp.category || '',
-        `₹${exp.amount}`
+        `₹${parseFloat(exp.amount || 0).toFixed(2)}`
       ]);
       columnStyles = {
         0: { cellWidth: contentWidth * 0.20 },

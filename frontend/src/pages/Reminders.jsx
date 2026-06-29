@@ -16,6 +16,13 @@ import {
 import { toast } from 'react-hot-toast';
 import { getDeviceTimeZone } from '../lib/deviceTimezone';
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const syncAndroidNotifications = async (enabled, reminderTime) => {
   try {
     await LocalNotifications.cancel({ notifications: [{ id: 1 }] });
@@ -158,7 +165,7 @@ const Reminders = () => {
 
   const openCreate = () => {
     setEditId(null);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     setForm({ title: '', description: '', amount: '', dueDate: '', reminderDate: today });
     setDialogOpen(true);
   };
@@ -281,7 +288,7 @@ const Reminders = () => {
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: isMobile ? 1.5 : 0, pl: isMobile ? 4.5 : 0, width: isMobile ? '100%' : 'auto', justifyContent: 'flex-start' }}>
-                      <Chip label={`₹${p.amount}`} size="small" color="error" variant="outlined" sx={{ fontWeight: 700 }} />
+                      <Chip label={`₹${parseFloat(p.amount || 0).toFixed(2)}`} size="small" color="error" variant="outlined" sx={{ fontWeight: 700 }} />
                       <Chip label={`Due: ${p.dueDate}`} size="small" variant="outlined" />
                       <Chip label={`Remind: ${p.reminderDate}`} size="small" variant="outlined" />
                     </Box>
@@ -327,7 +334,7 @@ const Reminders = () => {
                       </IconButton>
                       <Box sx={{ flexGrow: 1 }}>
                         <Typography sx={{ fontWeight: 600, textDecoration: 'line-through', fontSize: { xs: '0.95rem', sm: '1rem' } }}>{p.title}</Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>₹{p.amount} • Due: {p.dueDate}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>₹{parseFloat(p.amount || 0).toFixed(2)} • Due: {p.dueDate}</Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
                         <IconButton size="small" color="error" onClick={() => handleDelete(p.id)}><DeleteOutlineOutlined fontSize="small" /></IconButton>

@@ -87,6 +87,13 @@ const getCategoryColor = (category) => {
   return categoryColors[category] || '#6b7280';
 };
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const Dashboard = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -97,12 +104,12 @@ const Dashboard = () => {
 
   // Income dialog state
   const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
-  const [incomeForm, setIncomeForm] = useState({ accountId: '', description: '', amount: '', incomeDate: new Date().toISOString().split('T')[0], notes: '' });
+  const [incomeForm, setIncomeForm] = useState({ accountId: '', description: '', amount: '', incomeDate: getLocalDateString(), notes: '' });
   const [incomeSubmitting, setIncomeSubmitting] = useState(false);
 
   // Expense dialog state
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
+  const [expenseForm, setExpenseForm] = useState({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: getLocalDateString(), notes: '' });
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
 
@@ -204,7 +211,7 @@ const Dashboard = () => {
       toast.success('Income added');
       setIncomeDialogOpen(false);
       await refreshDashboard();
-      setIncomeForm({ accountId: '', description: '', amount: '', incomeDate: new Date().toISOString().split('T')[0], notes: '' });
+      setIncomeForm({ accountId: '', description: '', amount: '', incomeDate: getLocalDateString(), notes: '' });
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save income');
     } finally {
@@ -235,7 +242,7 @@ const Dashboard = () => {
       toast.success('Expense added');
       setExpenseDialogOpen(false);
       await refreshDashboard();
-      setExpenseForm({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' });
+      setExpenseForm({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: getLocalDateString(), notes: '' });
       setCustomCategory('');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save expense');
@@ -245,10 +252,10 @@ const Dashboard = () => {
   };
 
   const cardData = [
-    { title: 'Total Balance', value: `₹${totalBalance}`, icon: <AccountBalanceWalletOutlined />, color: '#6366f1' },
-    { title: 'Monthly Income', value: `₹${monthlyIncome}`, icon: <TrendingUpOutlined />, color: '#10b981' },
-    { title: 'Monthly Expenses', value: `₹${monthlyExpenses}`, icon: <TrendingDownOutlined />, color: '#f59e0b' },
-    { title: "Today's Expenses", value: `₹${todayExpenses}`, icon: <CalendarTodayOutlined />, color: '#ef4444' },
+    { title: 'Total Balance', value: `₹${parseFloat(totalBalance || 0).toFixed(2)}`, icon: <AccountBalanceWalletOutlined />, color: '#6366f1' },
+    { title: 'Monthly Income', value: `₹${parseFloat(monthlyIncome || 0).toFixed(2)}`, icon: <TrendingUpOutlined />, color: '#10b981' },
+    { title: 'Monthly Expenses', value: `₹${parseFloat(monthlyExpenses || 0).toFixed(2)}`, icon: <TrendingDownOutlined />, color: '#f59e0b' },
+    { title: "Today's Expenses", value: `₹${parseFloat(todayExpenses || 0).toFixed(2)}`, icon: <CalendarTodayOutlined />, color: '#ef4444' },
   ];
 
   // Matches Layout.jsx main padding so cards can extend edge-to-edge in the content area
@@ -444,7 +451,7 @@ const Dashboard = () => {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => `₹${value}`} contentStyle={{ borderRadius: 6, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '0.8rem' }} />
+                      <Tooltip formatter={(value) => `₹${parseFloat(value || 0).toFixed(2)}`} contentStyle={{ borderRadius: 6, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '0.8rem' }} />
                       <Legend
                         layout="horizontal"
                         verticalAlign="bottom"
@@ -518,7 +525,7 @@ const Dashboard = () => {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          -₹{exp.amount}
+                          -₹{parseFloat(exp.amount || 0).toFixed(2)}
                         </Typography>
                       </ListItem>
                       {i < recentExpenses.length - 1 && <Divider />}
@@ -554,9 +561,9 @@ const Dashboard = () => {
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                     {monthlyIncome >= monthlyExpenses ? (
-                      <span style={{ color: '#059669' }}>+₹{monthlyIncome - monthlyExpenses}</span>
+                      <span style={{ color: '#059669' }}>+₹{parseFloat(monthlyIncome - monthlyExpenses).toFixed(2)}</span>
                     ) : (
-                      <span style={{ color: '#dc2626' }}>-₹{monthlyExpenses - monthlyIncome}</span>
+                      <span style={{ color: '#dc2626' }}>-₹{parseFloat(monthlyExpenses - monthlyIncome).toFixed(2)}</span>
                     )}
                   </Typography>
                 </Box>

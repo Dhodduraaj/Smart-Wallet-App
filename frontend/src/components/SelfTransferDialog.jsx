@@ -6,6 +6,13 @@ import {
 import { toast } from 'react-hot-toast';
 import api from '../lib/api';
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const SelfTransferDialog = ({ open, onClose }) => {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -69,7 +76,7 @@ const SelfTransferDialog = ({ open, onClose }) => {
     setSubmitting(true);
     try {
       const destAcc = accounts.find(a => a.id === toAccount);
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
 
       // 1. Post expense to source account
       await api.post('/api/expenses', {

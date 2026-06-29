@@ -20,7 +20,14 @@ const getCategoryColor = (category) => {
   return categoryColors[category] || '#6b7280';
 };
 
-const emptyForm = { accountId: '', description: '', amount: '', category: 'Food', expenseDate: new Date().toISOString().split('T')[0], notes: '' };
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const emptyForm = { accountId: '', description: '', amount: '', category: 'Food', expenseDate: getLocalDateString(), notes: '' };
 
 const Expenses = () => {
   const isAndroidApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';

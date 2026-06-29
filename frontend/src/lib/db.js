@@ -9,6 +9,14 @@ export function generateUUID() {
   });
 }
 
+// Helper to get local date string YYYY-MM-DD
+export function getLocalDateString(d = new Date()) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getStoredData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   let store;
@@ -488,7 +496,7 @@ export async function saveLocalTransfer(transferData, isSynced = false) {
   saveStoredData(store);
 
   // Client-side self transfer splits into local expense and income
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateString();
   const amount = parseFloat(transferData.amount || 0);
 
   const sourceAcc = (store.data.accounts || []).find(a => a.id === transferData.fromAccountId);
@@ -526,7 +534,7 @@ export async function getLocalDashboardSummary() {
 
   const totalBalance = accounts.reduce((sum, a) => sum + parseFloat(a.currentBalance || 0), 0);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString();
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth(); // 0-indexed
 
@@ -588,7 +596,7 @@ export async function getLocalDashboardSummary() {
         const d = new Date(inc.incomeDate);
         return d.getFullYear() === y && d.getMonth() === m;
       })
-      .reduce((sum, inc) => sum + parseFloat(inc.incomeDate || 0), 0);
+      .reduce((sum, inc) => sum + parseFloat(inc.amount || 0), 0);
 
     monthlyTrends.push({
       month: monthName,

@@ -11,10 +11,17 @@ import {
 import { DownloadOutlined, AssessmentOutlined } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const Reports = () => {
   const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-  const todayStr = today.toISOString().split('T')[0];
+  const firstDay = getLocalDateString(new Date(today.getFullYear(), today.getMonth(), 1));
+  const todayStr = getLocalDateString(today);
 
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(todayStr);
@@ -136,10 +143,10 @@ const Reports = () => {
     if (type === 'today') { s = e = todayStr; }
     else if (type === 'week') {
       const d = new Date(now); d.setDate(d.getDate() - d.getDay());
-      s = d.toISOString().split('T')[0]; e = todayStr;
+      s = getLocalDateString(d); e = todayStr;
     } else if (type === 'month') { s = firstDay; e = todayStr; }
     else if (type === 'year') {
-      s = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; e = todayStr;
+      s = getLocalDateString(new Date(now.getFullYear(), 0, 1)); e = todayStr;
     }
     setStartDate(s); setEndDate(e);
   };

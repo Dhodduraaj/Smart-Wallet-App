@@ -9,7 +9,14 @@ import {
 import { AddOutlined, EditOutlined, DeleteOutlineOutlined, SearchOutlined } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 
-const emptyForm = { accountId: '', description: '', amount: '', incomeDate: new Date().toISOString().split('T')[0], notes: '' };
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const emptyForm = { accountId: '', description: '', amount: '', incomeDate: getLocalDateString(), notes: '' };
 
 const Income = () => {
   const [incomes, setIncomes] = useState([]);
