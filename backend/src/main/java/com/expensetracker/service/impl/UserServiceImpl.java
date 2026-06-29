@@ -43,13 +43,14 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
-        if (userRepository.existsByEmail(registerRequest.getEmail())) {
+        String normalizedEmail = registerRequest.getEmail() != null ? registerRequest.getEmail().trim().toLowerCase() : "";
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BadRequestException("Email is already registered");
         }
 
         User user = User.builder()
                 .fullName(registerRequest.getFullName())
-                .email(registerRequest.getEmail())
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(registerRequest.getPassword()))
                 .onboardingCompleted(false)
                 .build();
@@ -82,7 +83,7 @@ public class UserServiceImpl implements UserService {
         }
 
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(registerRequest.getEmail(), registerRequest.getPassword())
+                new UsernamePasswordAuthenticationToken(normalizedEmail, registerRequest.getPassword())
         );
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String token = tokenProvider.generateToken(authentication);
@@ -100,14 +101,15 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public AuthResponse login(LoginRequest loginRequest) {
+        String normalizedEmail = loginRequest.getEmail() != null ? loginRequest.getEmail().trim().toLowerCase() : "";
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())
+                new UsernamePasswordAuthenticationToken(normalizedEmail, loginRequest.getPassword())
         );
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String token = tokenProvider.generateToken(authentication);
 
-        User user = userRepository.findByEmail(loginRequest.getEmail())
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BadRequestException("User not found"));
 
         defaultCashAccountService.ensureForUser(user);
