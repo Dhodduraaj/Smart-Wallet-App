@@ -1,12 +1,3 @@
-import { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
-  appId: 'com.smartwallet.app',
-  appName: 'Smart Wallet',
-  webDir: 'dist',
-  server: {
-    androidScheme: 'https'
-  }
+export default {
+  webDir: 'dist'
 };
-
-export default config;

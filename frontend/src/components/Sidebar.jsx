@@ -98,7 +98,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', fontWeight: 600, ml: 5 }}>
-          BUILD: APK-1.0.5-SELF-TRANSFER-FIX
+          BUILD: APK-1.0.6-FRESH-ASSETS
         </Typography>
       </Toolbar>
 

@@ -181,7 +181,7 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
                   Smart Wallet
                 </Typography>
                 <Typography variant="caption" sx={{ fontSize: '0.6rem', color: 'text.secondary', fontWeight: 600 }}>
-                  BUILD: APK-1.0.5-SELF-TRANSFER-FIX
+                  BUILD: APK-1.0.6-FRESH-ASSETS
                 </Typography>
               </Box>
             </Box>
