@@ -79,21 +79,26 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
       }}
     >
       {/* Brand Header */}
-      <Toolbar sx={{ display: 'flex', alignItems: 'center', px: 2, gap: 1 }}>
-        <img src="/icon-round.png" alt="Smart Wallet" style={{ width: 32, height: 32 }} />
-        <Typography
-          variant="h6"
-          noWrap
-          component="div"
-          sx={{
-            fontWeight: 800,
-            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            letterSpacing: '0.5px',
-          }}
-        >
-          Smart Wallet
+      <Toolbar sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', px: 2, py: 1, gap: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <img src="/icon-round.png" alt="Smart Wallet" style={{ width: 32, height: 32 }} />
+          <Typography
+            variant="h6"
+            noWrap
+            component="div"
+            sx={{
+              fontWeight: 800,
+              background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Smart Wallet
+          </Typography>
+        </Box>
+        <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', fontWeight: 600, ml: 5 }}>
+          BUILD: APK-1.0.5-SELF-TRANSFER-FIX
         </Typography>
       </Toolbar>
 

@@ -2,6 +2,7 @@ import { getToken, onMessage } from 'firebase/messaging';
 import toast from 'react-hot-toast';
 import api from './api';
 import { getFirebaseMessaging, isFirebaseConfigured } from './firebase';
+import { Capacitor } from '@capacitor/core';
 
 const FCM_SW_PATH = '/firebase-messaging-sw.js';
 const TOKEN_STORAGE_KEY = 'fcm_device_token';
@@ -16,6 +17,20 @@ let tokenRefreshHandlersAttached = false;
  * Called on app load and reused by token registration.
  */
 export async function ensureFirebaseMessagingServiceWorker() {
+  if (Capacitor.isNativePlatform()) {
+    if ('serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+          console.info('[FCM SW] Unregistered active service worker on native platform.');
+        }
+      } catch (err) {
+        console.error('[FCM SW] Failed to unregister active service worker on native platform:', err);
+      }
+    }
+    return null;
+  }
   if (!('serviceWorker' in navigator)) {
     return null;
   }

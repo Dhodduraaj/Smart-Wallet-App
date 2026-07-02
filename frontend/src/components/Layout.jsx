@@ -165,19 +165,25 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
                   {!user.avatar && (user.fullName?.charAt(0)?.toUpperCase() || 'U')}
                 </Avatar>
               )}
-              <Typography
-                variant="h6"
-                noWrap
-                component="div"
-                sx={{
-                  fontWeight: 800,
-                  background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Smart Wallet
-              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', ml: 0.5 }}>
+                <Typography
+                  variant="h6"
+                  noWrap
+                  component="div"
+                  sx={{
+                    fontWeight: 800,
+                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    lineHeight: 1.2
+                  }}
+                >
+                  Smart Wallet
+                </Typography>
+                <Typography variant="caption" sx={{ fontSize: '0.6rem', color: 'text.secondary', fontWeight: 600 }}>
+                  BUILD: APK-1.0.5-SELF-TRANSFER-FIX
+                </Typography>
+              </Box>
             </Box>
             {isAndroidApk && (
               <Tooltip title="Exit app">
