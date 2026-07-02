@@ -17,6 +17,8 @@ export function getLocalDateString(d = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+const isSelfTransfer = x => x && x.notes && (x.notes === 'Self Transfer' || x.notes.includes('Self Transfer'));
+
 export function getStoredData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   let store;
@@ -191,7 +193,7 @@ export async function deleteLocalAccount(id, isSynced = false) {
 export async function getLocalExpenses(params = {}) {
   const { page = 0, size = 10, search = '', category = '', accountId = '' } = params;
   const store = getStoredData();
-  let records = (store.data.expenses || []).filter(e => e.deleted !== true);
+  let records = (store.data.expenses || []).filter(e => e.deleted !== true && !isSelfTransfer(e));
 
   if (search) {
     const q = search.toLowerCase();
@@ -305,7 +307,7 @@ export async function deleteLocalExpense(id, isSynced = false) {
 export async function getLocalIncomes(params = {}) {
   const { page = 0, size = 10, search = '', accountId = '' } = params;
   const store = getStoredData();
-  let records = (store.data.incomes || []).filter(i => i.deleted !== true);
+  let records = (store.data.incomes || []).filter(i => i.deleted !== true && !isSelfTransfer(i));
 
   if (search) {
     const q = search.toLowerCase();
@@ -487,56 +489,56 @@ export async function saveLocalTransfer(transferData, isSynced = false) {
   const store = getStoredData();
   const id = transferData.id || generateUUID();
   const transfers = store.data.transfers || [];
-  transfers.push({
+  const amount = parseFloat(transferData.amount || 0);
+  const today = transferData.date || getLocalDateString();
+
+  const updatedTransfer = {
     ...transferData,
     id,
+    amount,
+    date: today,
     deleted: false
-  });
+  };
+
+  transfers.push(updatedTransfer);
   store.data.transfers = transfers;
   saveStoredData(store);
 
-  // Client-side self transfer splits into local expense and income
-  const today = getLocalDateString();
-  const amount = parseFloat(transferData.amount || 0);
+  // Adjust account balances directly (without creating expenses/incomes)
+  await adjustLocalAccountBalance(transferData.fromAccountId, -amount);
+  await adjustLocalAccountBalance(transferData.toAccountId, amount);
 
-  const sourceAcc = (store.data.accounts || []).find(a => a.id === transferData.fromAccountId);
-  const destAcc = (store.data.accounts || []).find(a => a.id === transferData.toAccountId);
-
-  if (sourceAcc && destAcc) {
-    await saveLocalExpense({
-      accountId: transferData.fromAccountId,
-      description: `Transfer to ${destAcc.accountName}`,
-      amount,
-      category: 'Others',
-      paymentMode: 'Bank Transfer',
-      expenseDate: today,
-      notes: transferData.notes || 'Self Transfer'
-    });
-
-    await saveLocalIncome({
-      accountId: transferData.toAccountId,
-      description: `Transfer from ${sourceAcc.accountName}`,
-      amount,
-      incomeDate: today,
-      notes: transferData.notes || 'Self Transfer'
-    });
-  }
-
-  return { ...transferData, id };
+  return updatedTransfer;
 }
 
 // Dashboard statistics generation
 export async function getLocalDashboardSummary() {
   const store = getStoredData();
   const accounts = (store.data.accounts || []).filter(a => a.deleted !== true);
-  const expenses = (store.data.expenses || []).filter(e => e.deleted !== true);
-  const incomes = (store.data.incomes || []).filter(i => i.deleted !== true);
+  const expenses = (store.data.expenses || []).filter(e => e.deleted !== true && !isSelfTransfer(e));
+  const incomes = (store.data.incomes || []).filter(i => i.deleted !== true && !isSelfTransfer(i));
 
   const totalBalance = accounts.reduce((sum, a) => sum + parseFloat(a.currentBalance || 0), 0);
 
   const todayStr = getLocalDateString();
-  const currentYear = new Date().getFullYear();
-  const currentMonth = new Date().getMonth(); // 0-indexed
+  
+  // Derive current month/year from the latest transaction date
+  const allDates = [
+    ...expenses.map(e => e.expenseDate),
+    ...incomes.map(i => i.incomeDate)
+  ].filter(Boolean);
+
+  let currentYear = new Date().getFullYear();
+  let currentMonth = new Date().getMonth(); // 0-indexed
+
+  if (allDates.length > 0) {
+    allDates.sort((a, b) => new Date(b) - new Date(a));
+    const latestDate = new Date(allDates[0]);
+    if (!isNaN(latestDate.getTime())) {
+      currentYear = latestDate.getFullYear();
+      currentMonth = latestDate.getMonth();
+    }
+  }
 
   // Today's Expenses
   const todayExpenses = expenses
@@ -561,11 +563,16 @@ export async function getLocalDashboardSummary() {
 
   // Category Expenses Breakdown
   const catMap = {};
-  expenses.forEach(e => {
-    const cat = e.category || 'Others';
-    const amt = parseFloat(e.amount || 0);
-    catMap[cat] = (catMap[cat] || 0) + amt;
-  });
+  expenses
+    .filter(e => {
+      const d = new Date(e.expenseDate);
+      return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    })
+    .forEach(e => {
+      const cat = e.category || 'Others';
+      const amt = parseFloat(e.amount || 0);
+      catMap[cat] = (catMap[cat] || 0) + amt;
+    });
 
   const categoryExpenses = Object.entries(catMap).map(([category, amount]) => {
     let percentage = 0;
@@ -626,8 +633,8 @@ export async function getLocalDashboardSummary() {
 export async function getLocalReportData(startDate, endDate) {
   const store = getStoredData();
   const profile = store.data.profile || {};
-  const expenses = (store.data.expenses || []).filter(e => e.deleted !== true);
-  const incomes = (store.data.incomes || []).filter(i => i.deleted !== true);
+  const expenses = (store.data.expenses || []).filter(e => e.deleted !== true && !isSelfTransfer(e));
+  const incomes = (store.data.incomes || []).filter(i => i.deleted !== true && !isSelfTransfer(i));
 
   const start = new Date(startDate);
   const end = new Date(endDate);

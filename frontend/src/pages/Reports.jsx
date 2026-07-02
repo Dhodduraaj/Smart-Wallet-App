@@ -28,8 +28,8 @@ const Reports = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [filterTransactionType, setFilterTransactionType] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
+  const [filterTransactionType, setFilterTransactionType] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
 
   // Fetch unfiltered report data for the selected date range
   const fetchReport = async () => {
@@ -55,7 +55,7 @@ const Reports = () => {
     let incomes = [...(reportData.incomes || [])];
 
     // Apply category filter to expenses
-    if (filterCategory && filterCategory !== 'none') {
+    if (filterCategory && filterCategory !== 'none' && filterCategory !== 'all') {
       expenses = expenses.filter(
         e => (e.category || '').toLowerCase() === filterCategory.toLowerCase()
       );
@@ -187,7 +187,7 @@ const Reports = () => {
                   label="Transaction Type"
                   onChange={(e) => setFilterTransactionType(e.target.value)}
                 >
-                  <MenuItem value="">All Transactions</MenuItem>
+                  <MenuItem value="all">All Transactions</MenuItem>
                   <MenuItem value="income">Income Only</MenuItem>
                   <MenuItem value="expense">Expenses Only</MenuItem>
                 </Select>
@@ -205,7 +205,7 @@ const Reports = () => {
                   disabled={filterTransactionType === 'income'}
                 >
                   <MenuItem value="none">None (No Category Col)</MenuItem>
-                  <MenuItem value="">All Categories</MenuItem>
+                  <MenuItem value="all">All Categories</MenuItem>
                   <MenuItem value="Food">Food</MenuItem>
                   <MenuItem value="Transport">Transport</MenuItem>
                   <MenuItem value="Shopping">Shopping</MenuItem>

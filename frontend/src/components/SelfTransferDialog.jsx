@@ -75,28 +75,14 @@ const SelfTransferDialog = ({ open, onClose }) => {
 
     setSubmitting(true);
     try {
-      const destAcc = accounts.find(a => a.id === toAccount);
       const today = getLocalDateString();
 
-      // 1. Post expense to source account
-      await api.post('/api/expenses', {
-        accountId: fromAccount,
-        description: `Transfer to ${destAcc.accountName}`,
+      await api.post('/api/transfers', {
+        fromAccountId: fromAccount,
+        toAccountId: toAccount,
         amount: transferAmount,
-        category: 'Others',
-        paymentMode: 'Bank Transfer',
-        expenseDate: today,
         notes: notes || 'Self Transfer',
-        createdAt: new Date().toISOString()
-      });
-
-      // 2. Post income to destination account
-      await api.post('/api/incomes', {
-        accountId: toAccount,
-        description: `Transfer from ${sourceAcc.accountName}`,
-        amount: transferAmount,
-        incomeDate: today,
-        notes: notes || 'Self Transfer'
+        date: today
       });
 
       toast.success('Self transfer successful');

@@ -295,6 +295,14 @@ const customOfflineAdapter = async (config) => {
       setTimeout(() => sync(), 100);
       return mockResponse({ success: true });
     }
+
+    // 10. Transfers
+    if (cleanUrl.endsWith('/api/transfers') && method === 'POST') {
+      const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const created = await localDb.saveLocalTransfer(payload, false);
+      setTimeout(() => sync(), 100);
+      return mockResponse(created, 201);
+    }
   } catch (err) {
     console.error(`Error processing offline request for ${url}:`, err);
     return Promise.reject({
