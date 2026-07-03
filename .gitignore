@@ -1,0 +1,21 @@
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Android build
+android/.gradle/
+android/app/build/
+frontend/android/.gradle/
+frontend/android/app/build/
+
+# Capacitor generated
+android/app/capacitor.build.gradle
+android/capacitor.settings.gradle
+
+# APKs
+*.apk
+
+# OS
+.DS_Store
+Thumbs.db

@@ -17,12 +17,27 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import android.webkit.WebView;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(PdfDownloaderPlugin.class);
         super.onCreate(savedInstanceState);
+
+        // Enable WebView debugging
+        WebView.setWebContentsDebuggingEnabled(true);
+
+        // Force WebView cache/storage busting
+        if (this.bridge != null) {
+            WebView webView = this.bridge.getWebView();
+            if (webView != null) {
+                webView.clearCache(true);
+            }
+        }
+        android.webkit.WebStorage.getInstance().deleteAllData();
+        android.webkit.CookieManager.getInstance().removeAllCookies(null);
+        android.webkit.CookieManager.getInstance().flush();
     }
 
     @CapacitorPlugin(name = "PdfDownloader")
