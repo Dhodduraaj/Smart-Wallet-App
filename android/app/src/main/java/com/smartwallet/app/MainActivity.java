@@ -27,17 +27,6 @@ public class MainActivity extends BridgeActivity {
 
         // Enable WebView debugging
         WebView.setWebContentsDebuggingEnabled(true);
-
-        // Force WebView cache/storage busting
-        if (this.bridge != null) {
-            WebView webView = this.bridge.getWebView();
-            if (webView != null) {
-                webView.clearCache(true);
-            }
-        }
-        android.webkit.WebStorage.getInstance().deleteAllData();
-        android.webkit.CookieManager.getInstance().removeAllCookies(null);
-        android.webkit.CookieManager.getInstance().flush();
     }
 
     @CapacitorPlugin(name = "PdfDownloader")

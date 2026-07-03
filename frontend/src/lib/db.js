@@ -1,3 +1,5 @@
+import { Preferences } from '@capacitor/preferences';
+
 const STORAGE_KEY = 'smart_wallet_data';
 
 // Helper to generate UUID v4
@@ -83,7 +85,11 @@ export function getStoredData() {
 }
 
 export function saveStoredData(obj) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+  const raw = JSON.stringify(obj);
+  localStorage.setItem(STORAGE_KEY, raw);
+  Preferences.set({ key: STORAGE_KEY, value: raw }).catch(err => {
+    console.error('[Preferences] Failed to save stored data:', err);
+  });
 }
 
 // User Profile Helpers
@@ -686,6 +692,7 @@ export async function getLocalReportData(startDate, endDate) {
 
 export async function clearLocalDb() {
   localStorage.removeItem(STORAGE_KEY);
+  await Preferences.remove({ key: STORAGE_KEY });
 }
 
 export async function restoreDbFromBackup(backupObj) {
@@ -700,8 +707,10 @@ export async function restoreDbFromBackup(backupObj) {
   
   const merged = {
     ...store,
+    localUserId: backupObj.localUserId || backupObj.userId || store.localUserId,
     email: backupObj.email || store.email,
     isAuthenticated: true,
+    lastSync: backupObj.lastSync || store.lastSync,
     data: {
       ...store.data,
       ...restoredData

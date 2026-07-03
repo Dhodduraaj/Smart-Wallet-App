@@ -17,8 +17,8 @@ export async function sync() {
 
   const store = getStoredData();
   
-  // Only sync if email is set and user is authenticated
-  if (!store.email || !store.isAuthenticated) {
+  // Only sync if email is set, localUserId exists, and user is authenticated
+  if (!store.email || !store.isAuthenticated || !store.localUserId) {
     return;
   }
 
@@ -59,6 +59,13 @@ export async function sync() {
     
     const response = await apiNetwork.post(url, payload);
     if (response.status === 200) {
+      if (response.data && response.data.status === 'exists' && response.data.userId) {
+        console.warn(`[Sync Engine] Email already registered under ID ${response.data.userId}. Updating localUserId to match.`);
+        store.localUserId = response.data.userId;
+        saveStoredData(store);
+        isSyncing = false; // Reset sync flag
+        return sync(); // Retry sync with the correct ID
+      }
       store.lastSync = new Date().toISOString();
       saveStoredData(store);
       console.info('[Sync Engine] Background sync completed successfully.');
