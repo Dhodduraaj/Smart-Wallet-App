@@ -13,8 +13,7 @@ frontend/android/app/build/
 android/app/capacitor.build.gradle
 android/capacitor.settings.gradle
 
-# APKs
-*.apk
+
 
 # OS
 .DS_Store
