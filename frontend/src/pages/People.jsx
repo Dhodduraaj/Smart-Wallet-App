@@ -8,14 +8,13 @@ import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Chip, CircularProgress, Grid,
-  InputAdornment, useMediaQuery, useTheme, Avatar, Divider, Alert,
-  List, ListItem, ListItemAvatar, ListItemText
+  InputAdornment, useMediaQuery, useTheme, Avatar, Divider, Alert
 } from '@mui/material';
 import {
   AddOutlined, DeleteOutlineOutlined, SearchOutlined,
   ArrowBackOutlined, PersonOutlineOutlined, EditOutlined,
   CheckOutlined, CloseOutlined, NoteAltOutlined, ContentCopyOutlined,
-  ChevronRightOutlined
+  AccountBalanceWalletOutlined, TrendingUpOutlined, TrendingDownOutlined
 } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 
@@ -237,7 +236,7 @@ const People = () => {
         outgoingMoney: '',
       });
       await fetchLedger(selectedPerson.id);
-      fetchPeople(); // update totals in list
+      fetchPeople();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save entry');
     } finally {
@@ -365,24 +364,99 @@ const People = () => {
     );
   }
 
-  // ==========================================
-  // VIEW 2: INDIVIDUAL PERSON LEDGER SHEET
-  // ==========================================
+  // =========================================================================
+  // VIEW 2: INDIVIDUAL PERSON DETAILS PAGE (Dashboard Structural Reference)
+  // =========================================================================
   if (selectedPerson) {
     const netBalance = parseFloat(selectedPerson.balance || 0);
     const totalIncoming = parseFloat(selectedPerson.totalIncoming || 0);
     const totalOutgoing = parseFloat(selectedPerson.totalOutgoing || 0);
 
+    // Matches Dashboard's responsive edge-to-edge layout styling
+    const layoutPad = { xs: 2, sm: 3, md: 4 };
+    const fullBleedSx = {
+      width: {
+        xs: `calc(100% + ${layoutPad.xs * 2 * 8}px)`,
+        sm: `calc(100% + ${layoutPad.sm * 2 * 8}px)`,
+        md: `calc(100% + ${layoutPad.md * 2 * 8}px)`,
+      },
+      ml: { xs: -layoutPad.xs, sm: -layoutPad.sm, md: -layoutPad.md },
+      boxSizing: 'border-box',
+      overflow: 'hidden',
+    };
+    const gridRowSx = {
+      display: 'grid',
+      width: '100%',
+      gap: 0,
+      minWidth: 0,
+    };
+    const sectionCardSx = {
+      width: '100%',
+      maxWidth: '100%',
+      height: '100%',
+      borderRadius: 0,
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+    };
+
+    // Summary cards data aligned in Dashboard structure
+    const summaryCards = [
+      {
+        title: 'Total',
+        value: netBalance > 0 ? `+₹${netBalance.toFixed(2)}` : netBalance < 0 ? `-₹${Math.abs(netBalance).toFixed(2)}` : '₹0.00',
+        textColor: netBalance > 0 ? 'success.main' : netBalance < 0 ? 'error.main' : 'text.primary',
+        icon: <AccountBalanceWalletOutlined sx={{ fontSize: 18 }} />,
+        color: '#6366f1',
+        subtitle: 'Running balance',
+      },
+      {
+        title: 'Incoming Money',
+        value: `+₹${totalIncoming.toFixed(2)}`,
+        textColor: 'success.main',
+        icon: <TrendingUpOutlined sx={{ fontSize: 18 }} />,
+        color: '#10b981',
+        subtitle: 'Total received',
+      },
+      {
+        title: 'Outgoing Money',
+        value: `-₹${totalOutgoing.toFixed(2)}`,
+        textColor: 'error.main',
+        icon: <TrendingDownOutlined sx={{ fontSize: 18 }} />,
+        color: '#ef4444',
+        subtitle: 'Total given',
+      },
+      {
+        title: 'Notepad',
+        value: 'Personal Note',
+        icon: <NoteAltOutlined sx={{ fontSize: 18 }} />,
+        color: '#3b82f6',
+        subtitle: 'Click to open',
+        onClick: () => {
+          setNoteText(selectedPerson.note || '');
+          setNotepadOpen(true);
+        },
+      },
+    ];
+
     return (
       <Box sx={{ flexGrow: 1, width: '100%', maxWidth: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {/* Top Navigation */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 1.5 }}>
+        {/* Top Header - Structured like Dashboard header */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', sm: 'row' },
+            justifyContent: 'space-between',
+            alignItems: { xs: 'stretch', sm: 'center' },
+            gap: { xs: 1.5, sm: 2 },
+            mb: { xs: 1.5, sm: 2 },
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <IconButton onClick={() => setSelectedPerson(null)} sx={{ border: '1px solid', borderColor: 'divider' }}>
               <ArrowBackOutlined />
             </IconButton>
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.5rem', sm: '2rem' } }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2rem' } }}>
                 {selectedPerson.name}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -390,255 +464,107 @@ const People = () => {
               </Typography>
             </Box>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddOutlined />}
-            onClick={() => setEntryDialogOpen(true)}
-            sx={{ borderRadius: 2 }}
-          >
-            Add Entry
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() => setEntryDialogOpen(true)}
+              sx={{ borderRadius: 1.5, px: 2, py: 0.75, fontSize: { xs: '0.75rem', sm: '0.85rem' } }}
+            >
+              Add Entry
+            </Button>
+          </Box>
         </Box>
 
-        {/* Summary Cards: Total | Incoming Money | Outgoing Money | Personal Note */}
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={6} sm={6} md={3}>
-            <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-              <CardContent sx={{ p: 2 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
-                  Total
-                </Typography>
-                <Typography
-                  variant="h5"
-                  sx={{
-                    fontWeight: 700,
-                    mt: 0.5,
-                    color: netBalance > 0 ? 'success.main' : netBalance < 0 ? 'error.main' : 'text.secondary'
-                  }}
-                >
-                  {netBalance > 0 ? `+₹${netBalance.toFixed(2)}` : netBalance < 0 ? `-₹${Math.abs(netBalance).toFixed(2)}` : '₹0.00'}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={6} md={3}>
-            <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-              <CardContent sx={{ p: 2 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
-                  Incoming Money
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main', mt: 0.5 }}>
-                  +₹{totalIncoming.toFixed(2)}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={6} md={3}>
-            <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-              <CardContent sx={{ p: 2 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
-                  Outgoing Money
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: 'error.main', mt: 0.5 }}>
-                  -₹{totalOutgoing.toFixed(2)}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={6} md={3}>
-            <Card
-              onClick={() => {
-                setNoteText(selectedPerson.note || '');
-                setNotepadOpen(true);
-              }}
-              sx={{
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: selectedPerson.note ? 'primary.main' : 'divider',
-                height: '100%',
-                cursor: 'pointer',
-                transition: 'transform 0.15s, box-shadow 0.15s',
-                '&:hover': {
-                  transform: 'translateY(-2px)',
-                  boxShadow: theme.shadows[3]
-                }
-              }}
-            >
-              <CardContent sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <NoteAltOutlined color="primary" sx={{ fontSize: 22 }} />
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
-                      Personal Note
+        {/* Dashboard Connected Structure: Summary Cards connected directly to Ledger Section */}
+        <Box sx={{ ...fullBleedSx, display: 'flex', flexDirection: 'column', gap: 0, flex: 1 }}>
+          {/* Row 1: Summary Cards Grid */}
+          <Box
+            sx={{
+              ...gridRowSx,
+              gridTemplateColumns: {
+                xs: 'repeat(2, minmax(0, 1fr))',
+                md: 'repeat(4, minmax(0, 1fr))',
+              },
+            }}
+          >
+            {summaryCards.map((card, i) => (
+              <Card
+                key={i}
+                onClick={card.onClick}
+                sx={{
+                  ...sectionCardSx,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  cursor: card.onClick ? 'pointer' : 'default',
+                  transition: card.onClick ? 'background-color 0.15s' : 'none',
+                  '&:hover': card.onClick ? { bgcolor: 'action.hover' } : {},
+                }}
+              >
+                <CardContent sx={{ p: { xs: 1.5, sm: 2 }, flexGrow: 1, minWidth: 0 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        fontWeight: 500,
+                        fontSize: '0.75rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        minWidth: 0,
+                        flex: 1,
+                      }}
+                    >
+                      {card.title}
                     </Typography>
+                    <Avatar sx={{ bgcolor: `${card.color}15`, color: card.color, width: 32, height: 32, borderRadius: 1, flexShrink: 0 }}>
+                      {card.icon}
+                    </Avatar>
                   </Box>
-                  {selectedPerson.note && (
-                    <Chip label="Saved" size="small" color="primary" variant="outlined" sx={{ height: 18, fontSize: '0.65rem' }} />
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 600,
+                      fontSize: { xs: '0.95rem', sm: '1rem', md: '1.1rem' },
+                      wordBreak: 'break-word',
+                      color: card.textColor || 'inherit'
+                    }}
+                  >
+                    {card.value}
+                  </Typography>
+                  {card.subtitle && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {card.subtitle}
+                    </Typography>
                   )}
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {selectedPerson.note ? selectedPerson.note : 'Tap to add note'}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-
-        {/* Ledger Table: Column Order: Date | Details | Incoming | Outgoing | Total | Actions */}
-        {ledgerLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
-        ) : isMobile ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {ledgerEntries.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
-                <Typography color="text.secondary">No entries in {selectedPerson.name}'s ledger yet.</Typography>
+                </CardContent>
               </Card>
-            ) : (
-              ledgerEntries.map((entry) => {
-                const dt = formatTransactionDateTime(entry.date || entry.createdAt);
-                const inc = parseFloat(entry.incomingMoney || 0);
-                const out = parseFloat(entry.outgoingMoney || 0);
-                const rowTotal = parseFloat(entry.total || 0);
-                const isEditing = editingRowId === entry.id;
-
-                if (isEditing) {
-                  const prevTotal = getChronologicalPreviousTotal(entry.id);
-                  const editInc = parseFloat(editRowForm.incomingMoney || 0);
-                  const editOut = parseFloat(editRowForm.outgoingMoney || 0);
-                  const calculatedTotal = prevTotal + (isNaN(editInc) ? 0 : editInc) - (isNaN(editOut) ? 0 : editOut);
-
-                  return (
-                    <Card key={entry.id} sx={{ borderRadius: 2, p: 2, border: '2px solid', borderColor: 'primary.main' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
-                        Edit Ledger Entry
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                        <TextField
-                          label="Date"
-                          type="date"
-                          size="small"
-                          value={editRowForm.selectedDate}
-                          onChange={(e) => setEditRowForm({ ...editRowForm, selectedDate: e.target.value })}
-                          fullWidth
-                          InputLabelProps={{ shrink: true }}
-                        />
-                        <TextField
-                          label="Details"
-                          size="small"
-                          value={editRowForm.details}
-                          onChange={(e) => setEditRowForm({ ...editRowForm, details: e.target.value })}
-                          fullWidth
-                        />
-                        <Grid container spacing={1}>
-                          <Grid item xs={6}>
-                            <TextField
-                              label="Incoming (₹)"
-                              type="number"
-                              size="small"
-                              value={editRowForm.incomingMoney}
-                              onChange={(e) => setEditRowForm({ ...editRowForm, incomingMoney: e.target.value })}
-                              fullWidth
-                              inputProps={{ min: 0, step: 'any' }}
-                            />
-                          </Grid>
-                          <Grid item xs={6}>
-                            <TextField
-                              label="Outgoing (₹)"
-                              type="number"
-                              size="small"
-                              value={editRowForm.outgoingMoney}
-                              onChange={(e) => setEditRowForm({ ...editRowForm, outgoingMoney: e.target.value })}
-                              fullWidth
-                              inputProps={{ min: 0, step: 'any' }}
-                            />
-                          </Grid>
-                        </Grid>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                          <Typography variant="body2" color="text.secondary">Calculated Total:</Typography>
-                          <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                            ₹{calculatedTotal.toFixed(2)}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 1 }}>
-                          <Button size="small" variant="outlined" color="inherit" onClick={handleCancelEditRow} disabled={submittingEditRow}>
-                            Cancel
-                          </Button>
-                          <Button size="small" variant="contained" onClick={() => handleSaveEditRow(entry.id)} disabled={submittingEditRow}>
-                            {submittingEditRow ? <CircularProgress size={16} /> : 'Save'}
-                          </Button>
-                        </Box>
-                      </Box>
-                    </Card>
-                  );
-                }
-
-                return (
-                  <Card key={entry.id} sx={{ borderRadius: 2, p: 2, position: 'relative' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {dt.dateStr} • {dt.timeStr}
-                        </Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                          {entry.details || 'Record'}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        <IconButton size="small" color="primary" onClick={() => handleStartEditRow(entry)} title="Edit">
-                          <EditOutlined fontSize="small" />
-                        </IconButton>
-                        <IconButton size="small" color="error" onClick={() => handleDeleteEntry(entry.id)} title="Delete">
-                          <DeleteOutlineOutlined fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    </Box>
-                    <Divider sx={{ my: 1 }} />
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Box>
-                        {inc > 0 && (
-                          <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
-                            Incoming: +₹{inc.toFixed(2)}
-                          </Typography>
-                        )}
-                        {out > 0 && (
-                          <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 600 }}>
-                            Outgoing: -₹{out.toFixed(2)}
-                          </Typography>
-                        )}
-                      </Box>
-                      <Box sx={{ textAlign: 'right' }}>
-                        <Typography variant="caption" color="text.secondary">Total</Typography>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                          ₹{rowTotal.toFixed(2)}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Card>
-                );
-              })
-            )}
+            ))}
           </Box>
-        ) : (
-          <Card sx={{ borderRadius: 2 }}>
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: 'action.hover' }}>
-                    <TableCell sx={{ fontWeight: 700, width: '18%' }}>Date</TableCell>
-                    <TableCell sx={{ fontWeight: 700, width: '28%' }}>Details</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700, width: '14%' }}>Incoming</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700, width: '14%' }}>Outgoing</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700, width: '14%' }}>Total</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 700, width: '12%' }}>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
+
+          {/* Row 2: Ledger Section (Connected directly to Summary row below, eliminating empty gaps) */}
+          <Box sx={{ ...gridRowSx, gridTemplateColumns: '1fr', flex: 1 }}>
+            <Card sx={{ ...sectionCardSx, border: '1px solid', borderColor: 'divider', borderTop: 'none', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                  Personal Ledger Records
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {ledgerEntries.length} {ledgerEntries.length === 1 ? 'entry' : 'entries'}
+                </Typography>
+              </Box>
+
+              {ledgerLoading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
+              ) : isMobile ? (
+                // Mobile layout with inline editing capability
+                <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                   {ledgerEntries.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
-                        <Typography color="text.secondary">No entries recorded for {selectedPerson.name}</Typography>
-                      </TableCell>
-                    </TableRow>
+                    <Box sx={{ p: 4, textAlign: 'center' }}>
+                      <Typography color="text.secondary" variant="body2">No entries in {selectedPerson.name}'s ledger yet.</Typography>
+                    </Box>
                   ) : (
                     ledgerEntries.map((entry) => {
                       const dt = formatTransactionDateTime(entry.date || entry.createdAt);
@@ -654,10 +580,13 @@ const People = () => {
                         const calculatedTotal = prevTotal + (isNaN(editInc) ? 0 : editInc) - (isNaN(editOut) ? 0 : editOut);
 
                         return (
-                          <TableRow key={entry.id} sx={{ bgcolor: 'action.selected' }}>
-                            {/* 1. Date Input */}
-                            <TableCell>
+                          <Card key={entry.id} sx={{ borderRadius: 1, p: 2, border: '1px solid', borderColor: 'primary.main', bgcolor: 'action.hover' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
+                              Edit Ledger Entry
+                            </Typography>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                               <TextField
+                                label="Date"
                                 type="date"
                                 size="small"
                                 value={editRowForm.selectedDate}
@@ -665,119 +594,265 @@ const People = () => {
                                 fullWidth
                                 InputLabelProps={{ shrink: true }}
                               />
-                            </TableCell>
-
-                            {/* 2. Details Input */}
-                            <TableCell>
                               <TextField
+                                label="Details"
                                 size="small"
                                 value={editRowForm.details}
                                 onChange={(e) => setEditRowForm({ ...editRowForm, details: e.target.value })}
                                 fullWidth
-                                placeholder="Details"
                               />
-                            </TableCell>
-
-                            {/* 3. Incoming Input */}
-                            <TableCell align="right">
-                              <TextField
-                                type="number"
-                                size="small"
-                                value={editRowForm.incomingMoney}
-                                onChange={(e) => setEditRowForm({ ...editRowForm, incomingMoney: e.target.value })}
-                                placeholder="0.00"
-                                inputProps={{ min: 0, step: 'any', style: { textAlign: 'right' } }}
-                                fullWidth
-                              />
-                            </TableCell>
-
-                            {/* 4. Outgoing Input */}
-                            <TableCell align="right">
-                              <TextField
-                                type="number"
-                                size="small"
-                                value={editRowForm.outgoingMoney}
-                                onChange={(e) => setEditRowForm({ ...editRowForm, outgoingMoney: e.target.value })}
-                                placeholder="0.00"
-                                inputProps={{ min: 0, step: 'any', style: { textAlign: 'right' } }}
-                                fullWidth
-                              />
-                            </TableCell>
-
-                            {/* 5. Calculated Total (Read-only) */}
-                            <TableCell align="right" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
-                              ₹{calculatedTotal.toFixed(2)}
-                            </TableCell>
-
-                            {/* 6. Actions (Save / Cancel) */}
-                            <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() => handleSaveEditRow(entry.id)}
-                                disabled={submittingEditRow}
-                                title="Save"
-                              >
-                                {submittingEditRow ? <CircularProgress size={16} /> : <CheckOutlined fontSize="small" />}
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                color="inherit"
-                                onClick={handleCancelEditRow}
-                                disabled={submittingEditRow}
-                                title="Cancel"
-                              >
-                                <CloseOutlined fontSize="small" />
-                              </IconButton>
-                            </TableCell>
-                          </TableRow>
+                              <Grid container spacing={1}>
+                                <Grid item xs={6}>
+                                  <TextField
+                                    label="Incoming (₹)"
+                                    type="number"
+                                    size="small"
+                                    value={editRowForm.incomingMoney}
+                                    onChange={(e) => setEditRowForm({ ...editRowForm, incomingMoney: e.target.value })}
+                                    fullWidth
+                                    inputProps={{ min: 0, step: 'any' }}
+                                  />
+                                </Grid>
+                                <Grid item xs={6}>
+                                  <TextField
+                                    label="Outgoing (₹)"
+                                    type="number"
+                                    size="small"
+                                    value={editRowForm.outgoingMoney}
+                                    onChange={(e) => setEditRowForm({ ...editRowForm, outgoingMoney: e.target.value })}
+                                    fullWidth
+                                    inputProps={{ min: 0, step: 'any' }}
+                                  />
+                                </Grid>
+                              </Grid>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
+                                <Typography variant="body2" color="text.secondary">Calculated Total:</Typography>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                  ₹{calculatedTotal.toFixed(2)}
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 0.5 }}>
+                                <Button size="small" variant="outlined" color="inherit" onClick={handleCancelEditRow} disabled={submittingEditRow}>
+                                  Cancel
+                                </Button>
+                                <Button size="small" variant="contained" onClick={() => handleSaveEditRow(entry.id)} disabled={submittingEditRow}>
+                                  {submittingEditRow ? <CircularProgress size={16} /> : 'Save'}
+                                </Button>
+                              </Box>
+                            </Box>
+                          </Card>
                         );
                       }
 
                       return (
-                        <TableRow key={entry.id} hover>
-                          {/* 1. Date */}
-                          <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{dt.dateStr}</Typography>
-                            <Typography variant="caption" color="text.secondary">{dt.timeStr}</Typography>
-                          </TableCell>
-
-                          {/* 2. Details */}
-                          <TableCell sx={{ fontWeight: 600 }}>{entry.details || '—'}</TableCell>
-
-                          {/* 3. Incoming */}
-                          <TableCell align="right" sx={{ fontWeight: 600, color: inc > 0 ? 'success.main' : 'text.secondary' }}>
-                            {inc > 0 ? `+₹${inc.toFixed(2)}` : '—'}
-                          </TableCell>
-
-                          {/* 4. Outgoing */}
-                          <TableCell align="right" sx={{ fontWeight: 600, color: out > 0 ? 'error.main' : 'text.secondary' }}>
-                            {out > 0 ? `-₹${out.toFixed(2)}` : '—'}
-                          </TableCell>
-
-                          {/* 5. Total */}
-                          <TableCell align="right" sx={{ fontWeight: 700 }}>
-                            ₹{rowTotal.toFixed(2)}
-                          </TableCell>
-
-                          {/* 6. Actions */}
-                          <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
-                            <IconButton size="small" color="primary" onClick={() => handleStartEditRow(entry)} title="Edit">
-                              <EditOutlined fontSize="small" />
-                            </IconButton>
-                            <IconButton size="small" color="error" onClick={() => handleDeleteEntry(entry.id)} title="Delete">
-                              <DeleteOutlineOutlined fontSize="small" />
-                            </IconButton>
-                          </TableCell>
-                        </TableRow>
+                        <Card key={entry.id} sx={{ borderRadius: 1, p: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
+                            <Box>
+                              <Typography variant="caption" color="text.secondary">
+                                {dt.dateStr} • {dt.timeStr}
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                {entry.details || 'Record'}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              <IconButton size="small" color="primary" onClick={() => handleStartEditRow(entry)} title="Edit">
+                                <EditOutlined fontSize="small" />
+                              </IconButton>
+                              <IconButton size="small" color="error" onClick={() => handleDeleteEntry(entry.id)} title="Delete">
+                                <DeleteOutlineOutlined fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                          <Divider sx={{ my: 1 }} />
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Box>
+                              {inc > 0 && (
+                                <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600, fontSize: '0.8rem' }}>
+                                  Incoming: +₹{inc.toFixed(2)}
+                                </Typography>
+                              )}
+                              {out > 0 && (
+                                <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 600, fontSize: '0.8rem' }}>
+                                  Outgoing: -₹{out.toFixed(2)}
+                                </Typography>
+                              )}
+                            </Box>
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Typography variant="caption" color="text.secondary">Total</Typography>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                ₹{rowTotal.toFixed(2)}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </Card>
                       );
                     })
                   )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Card>
-        )}
+                </Box>
+              ) : (
+                // Desktop / Tablet Clean Table
+                // Required exact column order: Date | Details | Incoming | Outgoing | Total | Actions
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: 'action.hover' }}>
+                        <TableCell sx={{ fontWeight: 700, width: '18%', py: 1.5, pl: 2 }}>Date</TableCell>
+                        <TableCell sx={{ fontWeight: 700, width: '28%', py: 1.5 }}>Details</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5 }}>Incoming</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5 }}>Outgoing</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5 }}>Total</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 700, width: '12%', py: 1.5, pr: 2 }}>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {ledgerEntries.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                            <Typography color="text.secondary">No entries recorded for {selectedPerson.name}</Typography>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        ledgerEntries.map((entry) => {
+                          const dt = formatTransactionDateTime(entry.date || entry.createdAt);
+                          const inc = parseFloat(entry.incomingMoney || 0);
+                          const out = parseFloat(entry.outgoingMoney || 0);
+                          const rowTotal = parseFloat(entry.total || 0);
+                          const isEditing = editingRowId === entry.id;
+
+                          if (isEditing) {
+                            const prevTotal = getChronologicalPreviousTotal(entry.id);
+                            const editInc = parseFloat(editRowForm.incomingMoney || 0);
+                            const editOut = parseFloat(editRowForm.outgoingMoney || 0);
+                            const calculatedTotal = prevTotal + (isNaN(editInc) ? 0 : editInc) - (isNaN(editOut) ? 0 : editOut);
+
+                            return (
+                              <TableRow key={entry.id} sx={{ bgcolor: 'action.selected' }}>
+                                {/* 1. Date Input */}
+                                <TableCell sx={{ pl: 2 }}>
+                                  <TextField
+                                    type="date"
+                                    size="small"
+                                    value={editRowForm.selectedDate}
+                                    onChange={(e) => setEditRowForm({ ...editRowForm, selectedDate: e.target.value })}
+                                    fullWidth
+                                    InputLabelProps={{ shrink: true }}
+                                  />
+                                </TableCell>
+
+                                {/* 2. Details Input */}
+                                <TableCell>
+                                  <TextField
+                                    size="small"
+                                    value={editRowForm.details}
+                                    onChange={(e) => setEditRowForm({ ...editRowForm, details: e.target.value })}
+                                    fullWidth
+                                    placeholder="Details"
+                                  />
+                                </TableCell>
+
+                                {/* 3. Incoming Input */}
+                                <TableCell align="right">
+                                  <TextField
+                                    type="number"
+                                    size="small"
+                                    value={editRowForm.incomingMoney}
+                                    onChange={(e) => setEditRowForm({ ...editRowForm, incomingMoney: e.target.value })}
+                                    placeholder="0.00"
+                                    inputProps={{ min: 0, step: 'any', style: { textAlign: 'right' } }}
+                                    fullWidth
+                                  />
+                                </TableCell>
+
+                                {/* 4. Outgoing Input */}
+                                <TableCell align="right">
+                                  <TextField
+                                    type="number"
+                                    size="small"
+                                    value={editRowForm.outgoingMoney}
+                                    onChange={(e) => setEditRowForm({ ...editRowForm, outgoingMoney: e.target.value })}
+                                    placeholder="0.00"
+                                    inputProps={{ min: 0, step: 'any', style: { textAlign: 'right' } }}
+                                    fullWidth
+                                  />
+                                </TableCell>
+
+                                {/* 5. Calculated Total (Read-only) */}
+                                <TableCell align="right" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                                  ₹{calculatedTotal.toFixed(2)}
+                                </TableCell>
+
+                                {/* 6. Actions (Save / Cancel) */}
+                                <TableCell align="center" sx={{ whiteSpace: 'nowrap', pr: 2 }}>
+                                  <IconButton
+                                    size="small"
+                                    color="primary"
+                                    onClick={() => handleSaveEditRow(entry.id)}
+                                    disabled={submittingEditRow}
+                                    title="Save"
+                                  >
+                                    {submittingEditRow ? <CircularProgress size={16} /> : <CheckOutlined fontSize="small" />}
+                                  </IconButton>
+                                  <IconButton
+                                    size="small"
+                                    color="inherit"
+                                    onClick={handleCancelEditRow}
+                                    disabled={submittingEditRow}
+                                    title="Cancel"
+                                  >
+                                    <CloseOutlined fontSize="small" />
+                                  </IconButton>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
+
+                          return (
+                            <TableRow key={entry.id} hover>
+                              {/* 1. Date */}
+                              <TableCell sx={{ whiteSpace: 'nowrap', pl: 2 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>{dt.dateStr}</Typography>
+                                <Typography variant="caption" color="text.secondary">{dt.timeStr}</Typography>
+                              </TableCell>
+
+                              {/* 2. Details */}
+                              <TableCell sx={{ fontWeight: 600 }}>{entry.details || '—'}</TableCell>
+
+                              {/* 3. Incoming */}
+                              <TableCell align="right" sx={{ fontWeight: 600, color: inc > 0 ? 'success.main' : 'text.secondary' }}>
+                                {inc > 0 ? `+₹${inc.toFixed(2)}` : '—'}
+                              </TableCell>
+
+                              {/* 4. Outgoing */}
+                              <TableCell align="right" sx={{ fontWeight: 600, color: out > 0 ? 'error.main' : 'text.secondary' }}>
+                                {out > 0 ? `-₹${out.toFixed(2)}` : '—'}
+                              </TableCell>
+
+                              {/* 5. Total */}
+                              <TableCell align="right" sx={{ fontWeight: 700 }}>
+                                ₹{rowTotal.toFixed(2)}
+                              </TableCell>
+
+                              {/* 6. Actions */}
+                              <TableCell align="center" sx={{ whiteSpace: 'nowrap', pr: 2 }}>
+                                <IconButton size="small" color="primary" onClick={() => handleStartEditRow(entry)} title="Edit">
+                                  <EditOutlined fontSize="small" />
+                                </IconButton>
+                                <IconButton size="small" color="error" onClick={() => handleDeleteEntry(entry.id)} title="Delete">
+                                  <DeleteOutlineOutlined fontSize="small" />
+                                </IconButton>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Card>
+          </Box>
+        </Box>
 
         {/* Add Ledger Entry Dialog */}
         <Dialog open={entryDialogOpen} onClose={() => setEntryDialogOpen(false)} maxWidth="sm" fullWidth fullScreen={isMobile}>
@@ -893,55 +968,46 @@ const People = () => {
     );
   }
 
-  // ==========================================
-  // VIEW 1: PEOPLE LIST MAIN SCREEN (Dashboard Responsive Style)
-  // ==========================================
+  // =========================================================================
+  // VIEW 1: REVERTED PEOPLE LIST MAIN SCREEN (Card-based Layout Preserved)
+  // =========================================================================
   return (
-    <Box sx={{ flexGrow: 1, width: '100%', maxWidth: '100%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ position: 'relative' }}>
       {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', sm: 'row' },
-          justifyContent: 'space-between',
-          alignItems: { xs: 'stretch', sm: 'center' },
-          gap: { xs: 1.5, sm: 2 },
-          mb: { xs: 2, sm: 2.5 },
-        }}
-      >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2rem' } }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.75rem', sm: '2.125rem' } }}>
             People
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Personal memory ledger for money given or received (Memory purposes only)
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="contained"
-            startIcon={<AddOutlined />}
-            onClick={() => setAddPersonOpen(true)}
-            sx={{ borderRadius: 2, px: 2.5 }}
-          >
-            Add Person
-          </Button>
-        </Box>
+        <Button
+          variant="contained"
+          startIcon={<AddOutlined />}
+          onClick={() => setAddPersonOpen(true)}
+          sx={{ borderRadius: 2 }}
+        >
+          Add Person
+        </Button>
       </Box>
 
       {/* Search Bar */}
-      <Box sx={{ mb: 2.5, maxWidth: { xs: '100%', sm: 360 } }}>
-        <TextField
-          fullWidth
-          size="small"
-          placeholder="Search person..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment> }}
-        />
-      </Box>
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={12} sm={6} md={4}>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Search person name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment> }}
+          />
+        </Grid>
+      </Grid>
 
-      {/* People List / Table (Dashboard Style Responsive Layout) */}
+      {/* People Grid (Original Card-based Layout) */}
       {people.length === 0 ? (
         <Card sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
           <PersonOutlineOutlined sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
@@ -955,53 +1021,41 @@ const People = () => {
             Add Person
           </Button>
         </Card>
-      ) : isMobile ? (
-        // Mobile compact list
-        <Card sx={{ borderRadius: 2 }}>
-          <List sx={{ py: 0 }}>
-            {people.map((p, idx) => {
-              const bal = parseFloat(p.balance || 0);
-              return (
-                <React.Fragment key={p.id}>
-                  <ListItem
-                    onClick={() => setSelectedPerson(p)}
-                    sx={{
-                      cursor: 'pointer',
-                      py: 1.5,
-                      px: 2,
-                      display: 'flex',
-                      alignItems: 'center',
-                      '&:hover': { bgcolor: 'action.hover' }
-                    }}
-                  >
-                    <ListItemAvatar>
-                      <Avatar sx={{ bgcolor: 'primary.main', width: 38, height: 38, fontWeight: 700, fontSize: '0.9rem' }}>
-                        {(p.name || 'P').charAt(0).toUpperCase()}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+      ) : (
+        <Grid container spacing={2}>
+          {people.map((p) => {
+            const bal = parseFloat(p.balance || 0);
+            return (
+              <Grid item xs={12} sm={6} md={4} key={p.id}>
+                <Card
+                  onClick={() => setSelectedPerson(p)}
+                  sx={{
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: theme.shadows[4]
+                    },
+                    border: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                >
+                  <CardContent sx={{ p: 2.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Avatar sx={{ bgcolor: 'primary.main', width: 44, height: 44, fontWeight: 700 }}>
+                          {(p.name || 'P').charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
                             {p.name}
                           </Typography>
-                          {p.note && <NoteAltOutlined sx={{ fontSize: 14, color: 'primary.main' }} />}
+                          <Typography variant="caption" color="text.secondary">
+                            {p.entryCount || 0} {p.entryCount === 1 ? 'record' : 'records'}
+                          </Typography>
                         </Box>
-                      }
-                      secondary={`${p.entryCount || 0} ${p.entryCount === 1 ? 'record' : 'records'}`}
-                      sx={{ mr: 1 }}
-                    />
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{
-                          fontWeight: 800,
-                          color: bal > 0 ? 'success.main' : bal < 0 ? 'error.main' : 'text.secondary',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {bal > 0 ? `+₹${bal.toFixed(2)}` : bal < 0 ? `-₹${Math.abs(bal).toFixed(2)}` : '₹0.00'}
-                      </Typography>
+                      </Box>
                       <IconButton
                         size="small"
                         color="error"
@@ -1010,94 +1064,32 @@ const People = () => {
                         <DeleteOutlineOutlined fontSize="small" />
                       </IconButton>
                     </Box>
-                  </ListItem>
-                  {idx < people.length - 1 && <Divider />}
-                </React.Fragment>
-              );
-            })}
-          </List>
-        </Card>
-      ) : (
-        // Desktop / Tablet Clean Table
-        <Card sx={{ borderRadius: 2 }}>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'action.hover' }}>
-                  <TableCell sx={{ fontWeight: 700 }}>Person</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Records</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 700, width: 140 }}>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {people.map((p) => {
-                  const bal = parseFloat(p.balance || 0);
-                  return (
-                    <TableRow
-                      key={p.id}
-                      hover
-                      onClick={() => setSelectedPerson(p)}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Avatar sx={{ bgcolor: 'primary.main', width: 36, height: 36, fontWeight: 700, fontSize: '0.85rem' }}>
-                            {(p.name || 'P').charAt(0).toUpperCase()}
-                          </Avatar>
-                          <Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                                {p.name}
-                              </Typography>
-                              {p.note && <NoteAltOutlined sx={{ fontSize: 16, color: 'primary.main' }} titleAccess="Has personal note" />}
-                            </Box>
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 800,
-                            color: bal > 0 ? 'success.main' : bal < 0 ? 'error.main' : 'text.secondary'
-                          }}
-                        >
-                          {bal > 0 ? `+₹${bal.toFixed(2)}` : bal < 0 ? `-₹${Math.abs(bal).toFixed(2)}` : '₹0.00'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {p.entryCount || 0} {p.entryCount === 1 ? 'record' : 'records'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => setSelectedPerson(p)}
-                            title="Open Ledger"
-                          >
-                            <ChevronRightOutlined fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={(e) => handleDeletePerson(p.id, p.name, e)}
-                            title="Delete"
-                          >
-                            <DeleteOutlineOutlined fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Card>
+
+                    <Divider sx={{ my: 1.5 }} />
+
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <Chip
+                        label={
+                          bal > 0
+                            ? `+₹${bal.toFixed(2)}`
+                            : bal < 0
+                            ? `-₹${Math.abs(bal).toFixed(2)}`
+                            : '₹0.00'
+                        }
+                        size="small"
+                        sx={{
+                          fontWeight: 700,
+                          bgcolor: bal > 0 ? 'success.main' : bal < 0 ? 'error.main' : 'action.hover',
+                          color: bal !== 0 ? '#ffffff' : 'text.primary'
+                        }}
+                      />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            );
+          })}
+        </Grid>
       )}
 
       {/* Add Person Dialog */}
