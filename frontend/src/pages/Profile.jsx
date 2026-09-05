@@ -22,7 +22,10 @@ const AVATARS = [
   { id: 'sid', name: 'Sid' },
   { id: 'manny', name: 'Manny' },
   { id: 'diego', name: 'Diego' },
-  { id: 'scrat', name: 'Scrat' }
+  { id: 'scrat', name: 'Scrat' },
+  { id: 'wade', name: 'Wade' },
+  { id: 'ember', name: 'Ember' },
+  { id: 'spidey', name: 'Spidey' }
 ];
 
 const maskUserId = (id) => {
@@ -555,41 +558,68 @@ const Profile = () => {
               </Typography>
             </Box>
           </Box>
-          <Grid container spacing={2}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: 'repeat(4, 1fr)', sm: 'repeat(4, 1fr)' },
+              gap: 1.5,
+              justifyItems: 'center',
+              py: 1,
+            }}
+          >
             {AVATARS.map((avatar) => {
               const isSelected = selectedAvatar === avatar.id;
               return (
-                <Grid item xs={3} key={avatar.id}>
-                  <Box
-                    onClick={() => setSelectedAvatar(avatar.id)}
+                <Box
+                  key={avatar.id}
+                  onClick={() => setSelectedAvatar(avatar.id)}
+                  title={avatar.name}
+                  sx={{
+                    cursor: 'pointer',
+                    borderRadius: 2.5,
+                    p: 1,
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    border: '2px solid',
+                    borderColor: isSelected ? 'primary.main' : 'transparent',
+                    bgcolor: isSelected ? 'action.selected' : 'transparent',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      transform: 'scale(1.06)',
+                      boxShadow: '0 0 12px rgba(99, 102, 241, 0.3)',
+                      borderColor: isSelected ? 'primary.main' : 'divider',
+                    },
+                    ...(isSelected && {
+                      boxShadow: '0 0 16px rgba(99, 102, 241, 0.5)',
+                    })
+                  }}
+                >
+                  <Avatar
+                    src={`/avatars/${avatar.id}.png`}
+                    sx={{ width: 52, height: 52, mx: 'auto', mb: 0.5 }}
+                  />
+                  <Typography
+                    variant="caption"
                     sx={{
-                      cursor: 'pointer',
-                      borderRadius: 3,
-                      p: 1,
+                      fontSize: '0.68rem',
+                      fontWeight: isSelected ? 700 : 500,
                       textAlign: 'center',
-                      border: '2px solid',
-                      borderColor: isSelected ? 'primary.main' : 'transparent',
-                      bgcolor: isSelected ? 'action.selected' : 'transparent',
-                      transition: 'all 0.2s ease',
-                      '&:hover': {
-                        transform: 'scale(1.1)',
-                        boxShadow: '0 0 12px rgba(99, 102, 241, 0.3)',
-                        borderColor: isSelected ? 'primary.main' : 'divider',
-                      },
-                      ...(isSelected && {
-                        boxShadow: '0 0 16px rgba(99, 102, 241, 0.5)',
-                      })
+                      lineHeight: 1.2,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 1,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      width: '100%',
                     }}
                   >
-                    <Avatar
-                      src={`/avatars/${avatar.id}.png`}
-                      sx={{ width: 50, height: 50, mx: 'auto' }}
-                    />
-                  </Box>
-                </Grid>
+                    {avatar.name}
+                  </Typography>
+                </Box>
               );
             })}
-          </Grid>
+          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button variant="contained" color="error" onClick={() => setAvatarDialogOpen(false)}>Cancel</Button>

@@ -428,10 +428,16 @@ const People = () => {
       },
       {
         title: 'Notepad',
-        value: 'Personal Note',
+        value: (() => {
+          const rawNote = (selectedPerson?.note || '').trim();
+          if (!rawNote) return 'Personal Note';
+          const words = rawNote.split(/\s+/);
+          return words.slice(0, 2).join(' ');
+        })(),
         icon: <NoteAltOutlined sx={{ fontSize: 18 }} />,
         color: '#3b82f6',
         subtitle: 'Click to open',
+        tooltip: selectedPerson?.note ? selectedPerson.note : 'Personal Note',
         onClick: () => {
           setNoteText(selectedPerson.note || '');
           setNotepadOpen(true);
@@ -494,6 +500,7 @@ const People = () => {
               <Card
                 key={i}
                 onClick={card.onClick}
+                title={card.tooltip || card.title}
                 sx={{
                   ...sectionCardSx,
                   display: 'flex',
@@ -797,7 +804,8 @@ const People = () => {
                                   </IconButton>
                                   <IconButton
                                     size="small"
-                                    color="inherit"
+                                    variant="contained"
+                                    color="error"
                                     onClick={handleCancelEditRow}
                                     disabled={submittingEditRow}
                                     title="Cancel"
@@ -907,7 +915,7 @@ const People = () => {
             </Grid>
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button variant="outlined" onClick={() => setEntryDialogOpen(false)}>Cancel</Button>
+            <Button variant="contained" color="error" onClick={() => setEntryDialogOpen(false)}>Cancel</Button>
             <Button variant="contained" onClick={handleSaveEntry} disabled={submittingEntry}>
               {submittingEntry ? <CircularProgress size={20} /> : 'Save Record'}
             </Button>
@@ -950,14 +958,14 @@ const People = () => {
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between' }}>
             <Button
-              variant="outlined"
+              variant="contained"
+              color="primary"
               startIcon={<ContentCopyOutlined />}
               onClick={() => copyTextToClipboard(noteText)}
             >
-              Copy Text
             </Button>
             <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button variant="outlined" color="inherit" onClick={() => setNotepadOpen(false)}>
+              <Button variant="contained" color="error" onClick={() => setNotepadOpen(false)}>
                 Close
               </Button>
               <Button variant="contained" color="primary" onClick={handleSaveNote} disabled={savingNote}>
@@ -1112,7 +1120,7 @@ const People = () => {
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button variant="outlined" onClick={() => setAddPersonOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={() => setAddPersonOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleCreatePerson} disabled={submittingPerson}>
             {submittingPerson ? <CircularProgress size={20} /> : 'Create'}
           </Button>
