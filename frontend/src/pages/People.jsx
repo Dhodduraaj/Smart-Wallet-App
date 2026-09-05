@@ -70,6 +70,10 @@ const copyTextToClipboard = async (text) => {
 const People = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isDark = theme.palette.mode === 'dark';
+
+  // Dark bright blue line visible in both light and dark themes
+  const sectionBorderColor = isDark ? '#2563eb' : '#1d4ed8';
 
   // People list state
   const [people, setPeople] = useState([]);
@@ -407,7 +411,6 @@ const People = () => {
         textColor: netBalance > 0 ? 'success.main' : netBalance < 0 ? 'error.main' : 'text.primary',
         icon: <AccountBalanceWalletOutlined sx={{ fontSize: 18 }} />,
         color: '#6366f1',
-        subtitle: 'Running balance',
       },
       {
         title: 'Incoming Money',
@@ -415,7 +418,6 @@ const People = () => {
         textColor: 'success.main',
         icon: <TrendingUpOutlined sx={{ fontSize: 18 }} />,
         color: '#10b981',
-        subtitle: 'Total received',
       },
       {
         title: 'Outgoing Money',
@@ -423,7 +425,6 @@ const People = () => {
         textColor: 'error.main',
         icon: <TrendingDownOutlined sx={{ fontSize: 18 }} />,
         color: '#ef4444',
-        subtitle: 'Total given',
       },
       {
         title: 'Notepad',
@@ -452,7 +453,7 @@ const People = () => {
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <IconButton onClick={() => setSelectedPerson(null)} sx={{ border: '1px solid', borderColor: 'divider' }}>
+            <IconButton onClick={() => setSelectedPerson(null)} sx={{ border: '1px solid', borderColor: sectionBorderColor }}>
               <ArrowBackOutlined />
             </IconButton>
             <Box>
@@ -477,6 +478,7 @@ const People = () => {
         </Box>
 
         {/* Dashboard Connected Structure: Summary Cards connected directly to Ledger Section */}
+        {/* Sections separated with dark bright blue lines visible in both light & dark themes */}
         <Box sx={{ ...fullBleedSx, display: 'flex', flexDirection: 'column', gap: 0, flex: 1 }}>
           {/* Row 1: Summary Cards Grid */}
           <Box
@@ -497,7 +499,7 @@ const People = () => {
                   display: 'flex',
                   flexDirection: 'column',
                   border: '1px solid',
-                  borderColor: 'divider',
+                  borderColor: sectionBorderColor,
                   cursor: card.onClick ? 'pointer' : 'default',
                   transition: card.onClick ? 'background-color 0.15s' : 'none',
                   '&:hover': card.onClick ? { bgcolor: 'action.hover' } : {},
@@ -544,10 +546,10 @@ const People = () => {
             ))}
           </Box>
 
-          {/* Row 2: Ledger Section (Connected directly to Summary row below, eliminating empty gaps) */}
+          {/* Row 2: Ledger Section (Connected directly to Summary row below with dark bright blue border, eliminating empty gaps) */}
           <Box sx={{ ...gridRowSx, gridTemplateColumns: '1fr', flex: 1 }}>
-            <Card sx={{ ...sectionCardSx, border: '1px solid', borderColor: 'divider', borderTop: 'none', display: 'flex', flexDirection: 'column' }}>
-              <Box sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Card sx={{ ...sectionCardSx, border: '1px solid', borderColor: sectionBorderColor, borderTop: 'none', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: '1px solid', borderColor: sectionBorderColor, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.95rem' }}>
                   Personal Ledger Records
                 </Typography>
@@ -580,7 +582,7 @@ const People = () => {
                         const calculatedTotal = prevTotal + (isNaN(editInc) ? 0 : editInc) - (isNaN(editOut) ? 0 : editOut);
 
                         return (
-                          <Card key={entry.id} sx={{ borderRadius: 1, p: 2, border: '1px solid', borderColor: 'primary.main', bgcolor: 'action.hover' }}>
+                          <Card key={entry.id} sx={{ borderRadius: 1, p: 2, border: '1px solid', borderColor: sectionBorderColor, bgcolor: 'action.hover' }}>
                             <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
                               Edit Ledger Entry
                             </Typography>
@@ -645,7 +647,7 @@ const People = () => {
                       }
 
                       return (
-                        <Card key={entry.id} sx={{ borderRadius: 1, p: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                        <Card key={entry.id} sx={{ borderRadius: 1, p: 1.5, border: '1px solid', borderColor: sectionBorderColor }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
                             <Box>
                               <Typography variant="caption" color="text.secondary">
@@ -664,7 +666,7 @@ const People = () => {
                               </IconButton>
                             </Box>
                           </Box>
-                          <Divider sx={{ my: 1 }} />
+                          <Divider sx={{ my: 1, borderColor: isDark ? 'rgba(37, 99, 235, 0.3)' : 'rgba(29, 78, 216, 0.3)' }} />
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Box>
                               {inc > 0 && (
@@ -696,19 +698,19 @@ const People = () => {
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
-                      <TableRow sx={{ bgcolor: 'action.hover' }}>
-                        <TableCell sx={{ fontWeight: 700, width: '18%', py: 1.5, pl: 2 }}>Date</TableCell>
-                        <TableCell sx={{ fontWeight: 700, width: '28%', py: 1.5 }}>Details</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5 }}>Incoming</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5 }}>Outgoing</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5 }}>Total</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 700, width: '12%', py: 1.5, pr: 2 }}>Actions</TableCell>
+                      <TableRow sx={{ bgcolor: 'action.hover', borderBottom: '1.5px solid', borderColor: sectionBorderColor }}>
+                        <TableCell sx={{ fontWeight: 700, width: '18%', py: 1.5, pl: 2, borderColor: sectionBorderColor }}>Date</TableCell>
+                        <TableCell sx={{ fontWeight: 700, width: '28%', py: 1.5, borderColor: sectionBorderColor }}>Details</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5, borderColor: sectionBorderColor }}>Incoming</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5, borderColor: sectionBorderColor }}>Outgoing</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5, borderColor: sectionBorderColor }}>Total</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 700, width: '12%', py: 1.5, pr: 2, borderColor: sectionBorderColor }}>Actions</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {ledgerEntries.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                          <TableCell colSpan={6} align="center" sx={{ py: 6, borderColor: sectionBorderColor }}>
                             <Typography color="text.secondary">No entries recorded for {selectedPerson.name}</Typography>
                           </TableCell>
                         </TableRow>
@@ -727,7 +729,7 @@ const People = () => {
                             const calculatedTotal = prevTotal + (isNaN(editInc) ? 0 : editInc) - (isNaN(editOut) ? 0 : editOut);
 
                             return (
-                              <TableRow key={entry.id} sx={{ bgcolor: 'action.selected' }}>
+                              <TableRow key={entry.id} sx={{ bgcolor: 'action.selected', '& td': { borderColor: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(29, 78, 216, 0.2)' } }}>
                                 {/* 1. Date Input */}
                                 <TableCell sx={{ pl: 2 }}>
                                   <TextField
@@ -808,7 +810,7 @@ const People = () => {
                           }
 
                           return (
-                            <TableRow key={entry.id} hover>
+                            <TableRow key={entry.id} hover sx={{ '& td': { borderColor: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(29, 78, 216, 0.2)' } }}>
                               {/* 1. Date */}
                               <TableCell sx={{ whiteSpace: 'nowrap', pl: 2 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 600 }}>{dt.dateStr}</Typography>
@@ -969,14 +971,14 @@ const People = () => {
   }
 
   // =========================================================================
-  // VIEW 1: REVERTED PEOPLE LIST MAIN SCREEN (Card-based Layout Preserved)
+  // VIEW 1: PEOPLE LIST MAIN SCREEN (Matching Card Size as Accounts Page)
   // =========================================================================
   return (
-    <Box sx={{ position: 'relative' }}>
+    <Box sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.75rem', sm: '2.125rem' } }}>
+          <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.5px' }}>
             People
           </Typography>
           <Typography variant="body2" color="text.secondary">
@@ -987,29 +989,26 @@ const People = () => {
           variant="contained"
           startIcon={<AddOutlined />}
           onClick={() => setAddPersonOpen(true)}
-          sx={{ borderRadius: 2 }}
         >
           Add Person
         </Button>
       </Box>
 
       {/* Search Bar */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={4}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="Search person name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment> }}
-          />
-        </Grid>
-      </Grid>
+      <Box sx={{ mb: 3, maxWidth: { xs: '100%', sm: 360 } }}>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Search person name..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment> }}
+        />
+      </Box>
 
-      {/* People Grid (Original Card-based Layout) */}
+      {/* People Grid (Exact Same Card Size and Grid Structure as Accounts Page) */}
       {people.length === 0 ? (
-        <Card sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
+        <Card sx={{ p: 6, textAlign: 'center' }}>
           <PersonOutlineOutlined sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
           <Typography variant="h6" color="text.secondary">
             {search ? 'No people found matching your search' : 'No people added yet'}
@@ -1022,74 +1021,76 @@ const People = () => {
           </Button>
         </Card>
       ) : (
-        <Grid container spacing={2}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(auto-fill, minmax(min(100%, 16rem), 1fr))',
+            },
+            gap: { xs: 2, sm: 3 },
+            width: '100%',
+          }}
+        >
           {people.map((p) => {
             const bal = parseFloat(p.balance || 0);
+            const color = '#6366f1';
             return (
-              <Grid item xs={12} sm={6} md={4} key={p.id}>
-                <Card
-                  onClick={() => setSelectedPerson(p)}
-                  sx={{
-                    borderRadius: 2,
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: theme.shadows[4]
-                    },
-                    border: '1px solid',
-                    borderColor: 'divider',
-                  }}
-                >
-                  <CardContent sx={{ p: 2.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Avatar sx={{ bgcolor: 'primary.main', width: 44, height: 44, fontWeight: 700 }}>
-                          {(p.name || 'P').charAt(0).toUpperCase()}
-                        </Avatar>
-                        <Box>
-                          <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                            {p.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {p.entryCount || 0} {p.entryCount === 1 ? 'record' : 'records'}
-                          </Typography>
-                        </Box>
-                      </Box>
+              <Card
+                key={p.id}
+                onClick={() => setSelectedPerson(p)}
+                sx={{
+                  position: 'relative',
+                  overflow: 'hidden',
+                  borderTop: `3px solid ${color}`,
+                  width: '100%',
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: theme.shadows[4],
+                  },
+                }}
+              >
+                <CardContent sx={{ p: 3 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                    <Avatar sx={{ bgcolor: `${color}20`, color, borderRadius: 2, width: 40, height: 40, fontWeight: 700 }}>
+                      {(p.name || 'P').charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
                       <IconButton
                         size="small"
                         color="error"
                         onClick={(e) => handleDeletePerson(p.id, p.name, e)}
+                        aria-label="Delete person"
                       >
                         <DeleteOutlineOutlined fontSize="small" />
                       </IconButton>
                     </Box>
-
-                    <Divider sx={{ my: 1.5 }} />
-
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-                      <Chip
-                        label={
-                          bal > 0
-                            ? `+₹${bal.toFixed(2)}`
-                            : bal < 0
-                            ? `-₹${Math.abs(bal).toFixed(2)}`
-                            : '₹0.00'
-                        }
-                        size="small"
-                        sx={{
-                          fontWeight: 700,
-                          bgcolor: bal > 0 ? 'success.main' : bal < 0 ? 'error.main' : 'action.hover',
-                          color: bal !== 0 ? '#ffffff' : 'text.primary'
-                        }}
-                      />
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
+                  </Box>
+                  <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5, wordBreak: 'break-word' }}>
+                    {p.name}
+                  </Typography>
+                  <Chip
+                    label={`${p.entryCount || 0} ${p.entryCount === 1 ? 'record' : 'records'}`}
+                    size="small"
+                    sx={{ mb: 2, bgcolor: `${color}15`, color, fontWeight: 600, borderRadius: 1.5 }}
+                  />
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 600,
+                      color: bal > 0 ? 'success.main' : bal < 0 ? 'error.main' : 'text.primary',
+                    }}
+                  >
+                    {bal > 0 ? `+₹${bal.toFixed(2)}` : bal < 0 ? `-₹${Math.abs(bal).toFixed(2)}` : '₹0.00'}
+                  </Typography>
+                </CardContent>
+              </Card>
             );
           })}
-        </Grid>
+        </Box>
       )}
 
       {/* Add Person Dialog */}
@@ -1104,7 +1105,7 @@ const People = () => {
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleCreatePerson();
             }}
-            placeholder="e.g. Arun, Priya, Kumar"
+            placeholder="Enter Name"
             fullWidth
             required
             helperText="Creates a personal memory ledger sheet"
