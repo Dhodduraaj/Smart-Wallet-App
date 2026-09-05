@@ -19,6 +19,7 @@ import Accounts from './pages/Accounts';
 import Expenses from './pages/Expenses';
 import Income from './pages/Income';
 import Reminders from './pages/Reminders';
+import People from './pages/People';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import About from './pages/About';
@@ -131,6 +132,20 @@ const AppRoutes = ({ darkMode, toggleDarkMode }) => {
             ) : (
               <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
                 <Reminders />
+              </Layout>
+            )}
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/people"
+        element={
+          <ProtectedRoute>
+            {user && user.onboardingCompleted === false ? (
+              <Navigate to="/onboarding" replace />
+            ) : (
+              <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
+                <People />
               </Layout>
             )}
           </ProtectedRoute>

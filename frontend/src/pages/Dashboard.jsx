@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../lib/api';
 import {
+  formatTransactionDateTime,
+  createTransactionDateTime
+} from '../lib/transactionSorter';
+import {
   Grid,
   Card,
   CardContent,
@@ -21,6 +25,7 @@ import {
   DialogActions,
   TextField,
   MenuItem,
+  Chip,
 } from '@mui/material';
 import {
   AccountBalanceWalletOutlined,
@@ -113,13 +118,15 @@ const Dashboard = () => {
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
 
+  // Others drill-down dialog state
+  const [othersDialogOpen, setOthersDialogOpen] = useState(false);
+
   const categories = ['Food', 'Grocery', 'Transport', 'Shopping', 'Medical', 'Education', 'Entertainment', 'Bills', 'Fuel', 'Others'];
 
   const refreshDashboard = async () => {
     const response = await api.get('/api/dashboard/summary');
     setData(response.data);
-    const sorted = [...(response.data.recentExpenses || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    setRecentExpenses(sorted);
+    setRecentExpenses(response.data.recentExpenses || []);
   };
 
   const loadAccountsIfNeeded = async () => {
@@ -137,8 +144,7 @@ const Dashboard = () => {
         const response = await api.get('/api/dashboard/summary');
         if (cancelled) return;
         setData(response.data);
-        const sorted = [...(response.data.recentExpenses || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        setRecentExpenses(sorted);
+        setRecentExpenses(response.data.recentExpenses || []);
       } catch (err) {
         if (!cancelled) toast.error('Failed to load dashboard statistics.');
       } finally {
@@ -176,7 +182,10 @@ const Dashboard = () => {
     monthlyIncome = 0,
     categoryExpenses = [],
     monthlyTrends = [],
+    othersBreakdown = null,
   } = data;
+
+  const othersData = categoryExpenses.find(c => c.isOthers || c.category === 'Others') || othersBreakdown;
 
   const openIncomeDialog = async () => {
     try {
@@ -206,7 +215,13 @@ const Dashboard = () => {
     }
     setIncomeSubmitting(true);
     try {
-      const payload = { ...incomeForm, amount: parseFloat(incomeForm.amount) };
+      const transactionDateTime = createTransactionDateTime(incomeForm.incomeDate);
+      const payload = {
+        ...incomeForm,
+        amount: parseFloat(incomeForm.amount),
+        transactionDateTime,
+        createdAt: transactionDateTime
+      };
       await api.post('/api/incomes', payload);
       toast.success('Income added');
       setIncomeDialogOpen(false);
@@ -231,12 +246,14 @@ const Dashboard = () => {
     setExpenseSubmitting(true);
     try {
       const categoryToSave = expenseForm.category === 'Others' ? customCategory.trim() : expenseForm.category;
+      const transactionDateTime = createTransactionDateTime(expenseForm.expenseDate);
       const payload = {
         ...expenseForm,
         category: categoryToSave,
         amount: parseFloat(expenseForm.amount),
+        transactionDateTime,
         paymentMode: 'Cash',
-        createdAt: new Date().toISOString()
+        createdAt: transactionDateTime
       };
       await api.post('/api/expenses', payload);
       toast.success('Expense added');
@@ -426,9 +443,20 @@ const Dashboard = () => {
 
           <Card sx={{ ...sectionCardSx, p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', minWidth: 0, border: '1px solid darkblue' }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, p: { xs: 1.5, sm: 2 }, minWidth: 0 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '0.95rem' }}>
-                Categories
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                  Categories
+                </Typography>
+                {categoryExpenses.some(c => c.isOthers || c.category === 'Others') && (
+                  <Chip
+                    label="Click Others for details"
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setOthersDialogOpen(true)}
+                    sx={{ fontSize: '0.65rem', height: 20, cursor: 'pointer' }}
+                  />
+                )}
+              </Box>
               {categoryExpenses.length === 0 ? (
                 <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', py: 3 }}>
                   <Typography variant="caption" color="text.secondary">No expenses</Typography>
@@ -446,9 +474,19 @@ const Dashboard = () => {
                         paddingAngle={2}
                         dataKey="amount"
                         nameKey="category"
+                        onClick={(entry) => {
+                          if (entry && (entry.category === 'Others' || entry.isOthers)) {
+                            setOthersDialogOpen(true);
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
                       >
                         {categoryExpenses.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
+                            style={{ cursor: (entry.isOthers || entry.category === 'Others') ? 'pointer' : 'default' }}
+                          />
                         ))}
                       </Pie>
                       <Tooltip formatter={(value) => `₹${parseFloat(value || 0).toFixed(2)}`} contentStyle={{ borderRadius: 6, border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '0.8rem' }} />
@@ -458,7 +496,12 @@ const Dashboard = () => {
                         align="center"
                         iconType="circle"
                         iconSize={6}
-                        wrapperStyle={{ fontSize: '0.7rem', paddingTop: 6 }}
+                        wrapperStyle={{ fontSize: '0.7rem', paddingTop: 6, cursor: 'pointer' }}
+                        onClick={(entry) => {
+                          if (entry && (entry.value === 'Others')) {
+                            setOthersDialogOpen(true);
+                          }
+                        }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -510,7 +553,10 @@ const Dashboard = () => {
                         </ListItemAvatar>
                         <ListItemText
                           primary={exp.description}
-                          secondary={`${exp.category}`}
+                          secondary={(() => {
+                            const dt = formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate);
+                            return `${exp.category} • ${dt.dateStr}, ${dt.timeStr}`;
+                          })()}
                           primaryTypographyProps={{ fontWeight: 500, fontSize: '0.85rem', noWrap: true }}
                           secondaryTypographyProps={{ fontSize: '0.7rem', noWrap: true }}
                           sx={{ minWidth: 0, mr: 1 }}
@@ -724,6 +770,76 @@ const Dashboard = () => {
           <Button variant="contained" color="primary" onClick={handleSaveExpense} disabled={expenseSubmitting}>
             {expenseSubmitting ? <CircularProgress size={20} /> : 'Add'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Others Category Drill-down Dialog */}
+      <Dialog
+        open={othersDialogOpen}
+        onClose={() => setOthersDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>Others — Custom Categories</Typography>
+            <Typography variant="caption" color="text.secondary">Detailed breakdown of custom expense categories</Typography>
+          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 800, color: 'error.main' }}>
+            ₹{parseFloat(othersData?.amount || othersData?.total || 0).toFixed(2)}
+          </Typography>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2 }}>
+          {/* Custom Categories Summary */}
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>Custom Categories</Typography>
+          {(!othersData?.customCategories || othersData.customCategories.length === 0) && (!othersData?.categories || othersData.categories.length === 0) ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>No custom categories found in this period.</Typography>
+          ) : (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
+              {(othersData?.customCategories || othersData?.categories || []).map((cat, idx) => (
+                <Chip
+                  key={idx}
+                  label={`${cat.category}: ₹${parseFloat(cat.amount).toFixed(2)} (${cat.percentage}%)`}
+                  sx={{ fontWeight: 600, bgcolor: 'action.hover' }}
+                />
+              ))}
+            </Box>
+          )}
+
+          {/* Transactions List */}
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+            Underlying Transactions ({othersData?.transactions?.length || 0})
+          </Typography>
+          {(!othersData?.transactions || othersData.transactions.length === 0) ? (
+            <Typography variant="body2" color="text.secondary">No individual transactions recorded under custom categories.</Typography>
+          ) : (
+            <List sx={{ py: 0 }}>
+              {othersData.transactions.map((tx, idx) => {
+                const dt = formatTransactionDateTime(tx.transactionDateTime || tx.createdAt || tx.expenseDate);
+                return (
+                  <React.Fragment key={tx.id || idx}>
+                    <ListItem sx={{ py: 1, px: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box sx={{ pr: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{tx.description}</Typography>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
+                          <Chip label={tx.category} size="small" sx={{ fontSize: '0.7rem', height: 20 }} />
+                          <Typography variant="caption" color="text.secondary">{dt.dateStr} • {dt.timeStr}</Typography>
+                          {tx.accountName && <Typography variant="caption" color="text.secondary">• {tx.accountName}</Typography>}
+                        </Box>
+                      </Box>
+                      <Typography variant="body2" sx={{ fontWeight: 700, color: 'error.main', whiteSpace: 'nowrap' }}>
+                        -₹{parseFloat(tx.amount || 0).toFixed(2)}
+                      </Typography>
+                    </ListItem>
+                    {idx < othersData.transactions.length - 1 && <Divider />}
+                  </React.Fragment>
+                );
+              })}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 1.5 }}>
+          <Button variant="outlined" onClick={() => setOthersDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -303,6 +303,58 @@ const customOfflineAdapter = async (config) => {
       setTimeout(() => sync(), 100);
       return mockResponse(created, 201);
     }
+
+    // 11. People & Personal Ledger CRUD
+    if (cleanUrl.endsWith('/api/people')) {
+      if (method === 'GET') {
+        const people = await localDb.getLocalPeople(queryParams.search || '');
+        return mockResponse(people);
+      }
+      if (method === 'POST') {
+        const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+        const created = await localDb.saveLocalPerson(payload);
+        setTimeout(() => sync(), 100);
+        return mockResponse(created, 201);
+      }
+    }
+
+    const personLedgerMatch = cleanUrl.match(/\/api\/people\/([^/]+)\/ledger$/);
+    if (personLedgerMatch) {
+      const personId = personLedgerMatch[1];
+      if (method === 'GET') {
+        const entries = await localDb.getLocalPersonLedger(personId);
+        return mockResponse(entries);
+      }
+      if (method === 'POST') {
+        const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+        const created = await localDb.saveLocalPersonLedgerEntry({ ...payload, personId });
+        setTimeout(() => sync(), 100);
+        return mockResponse(created, 201);
+      }
+    }
+
+    const personLedgerEntryMatch = cleanUrl.match(/\/api\/people\/ledger\/([^/]+)$/);
+    if (personLedgerEntryMatch && method === 'DELETE') {
+      const entryId = personLedgerEntryMatch[1];
+      await localDb.deleteLocalPersonLedgerEntry(entryId);
+      setTimeout(() => sync(), 100);
+      return mockResponse(null, 204);
+    }
+
+    const personIdMatch = cleanUrl.match(/\/api\/people\/([^/]+)$/);
+    if (personIdMatch) {
+      const personId = personIdMatch[1];
+      if (method === 'GET') {
+        const person = await localDb.getLocalPerson(personId);
+        if (!person) throw { status: 404, message: 'Person not found' };
+        return mockResponse(person);
+      }
+      if (method === 'DELETE') {
+        await localDb.deleteLocalPerson(personId);
+        setTimeout(() => sync(), 100);
+        return mockResponse(null, 204);
+      }
+    }
   } catch (err) {
     console.error(`Error processing offline request for ${url}:`, err);
     return Promise.reject({

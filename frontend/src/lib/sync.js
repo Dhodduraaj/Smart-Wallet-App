@@ -52,6 +52,8 @@ export async function sync() {
         categories,
         reminders: store.data.reminders || [],
         transfers: store.data.transfers || [],
+        people: store.data.people || [],
+        peopleLedger: store.data.peopleLedger || [],
         profile: store.data.profile || {},
         settings: store.data.settings || {}
       }

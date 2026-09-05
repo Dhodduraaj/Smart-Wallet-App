@@ -35,5 +35,7 @@ public class IncomeDto {
 
     private String notes;
 
+    private String transactionDateTime;
+
     private LocalDateTime createdAt;
 }

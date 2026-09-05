@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import api from '../lib/api';
 import {
+  formatTransactionDateTime,
+  createTransactionDateTime
+} from '../lib/transactionSorter';
+import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Chip, CircularProgress, Grid,
@@ -32,21 +36,6 @@ const emptyForm = { accountId: '', description: '', amount: '', category: 'Food'
 const Expenses = () => {
   const isAndroidApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 
-  const formatTime = (isoString) => {
-    if (!isoString) return '';
-    try {
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '';
-      return new Intl.DateTimeFormat('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }).format(date).toLowerCase();
-    } catch {
-      return '';
-    }
-  };
-
   const [expenses, setExpenses] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,15 +57,11 @@ const Expenses = () => {
 
   const fetchExpenses = async () => {
     try {
-      const params = new URLSearchParams({ page, size: rowsPerPage, sort: 'createdAt,desc' });
+      const params = new URLSearchParams({ page, size: rowsPerPage });
       if (search) params.append('search', search);
       if (filterCategory) params.append('category', filterCategory);
       const res = await api.get(`/api/expenses?${params}`);
-      let fetched = res.data.content || [];
-      fetched = [...fetched].sort((a, b) => {
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      });
-      setExpenses(fetched);
+      setExpenses(res.data.content || []);
       setTotalElements(res.data.totalElements || 0);
     } catch {
       toast.error('Failed to load expenses');
@@ -154,12 +139,16 @@ const Expenses = () => {
     setSubmitting(true);
     try {
       const categoryToSave = form.category === 'Others' ? customCategory.trim() : form.category;
+      const existingExpense = editId ? expenses.find(e => e.id === editId) : null;
+      const transactionDateTime = existingExpense?.transactionDateTime || createTransactionDateTime(form.expenseDate);
+
       const payload = {
         ...form,
         category: categoryToSave,
         amount: parseFloat(form.amount),
-        paymentMode: editId ? (expenses.find(e => e.id === editId)?.paymentMode || 'Cash') : 'Cash',
-        createdAt: editId ? (expenses.find(e => e.id === editId)?.createdAt) : new Date().toISOString()
+        transactionDateTime,
+        paymentMode: existingExpense?.paymentMode || 'Cash',
+        createdAt: existingExpense?.createdAt || transactionDateTime
       };
       if (editId) { await api.put(`/api/expenses/${editId}`, payload); toast.success('Expense updated'); }
       else { await api.post('/api/expenses', payload); toast.success('Expense added'); }
@@ -229,9 +218,14 @@ const Expenses = () => {
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
                         {exp.description}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {isAndroidApk ? exp.expenseDate : `${exp.expenseDate} • ${formatTime(exp.createdAt)}`}
-                      </Typography>
+                      {(() => {
+                        const dt = formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate);
+                        return (
+                          <Typography variant="caption" color="text.secondary">
+                            {dt.dateStr} • {dt.timeStr}
+                          </Typography>
+                        );
+                      })()}
                     </Box>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'error.main' }}>
                       -₹{parseFloat(exp.amount).toFixed(2)}
@@ -288,7 +282,7 @@ const Expenses = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Date</TableCell>
-                  {!isAndroidApk && <TableCell>Time</TableCell>}
+                  <TableCell>Time</TableCell>
                   <TableCell>Description</TableCell>
                   <TableCell>Category</TableCell>
                   <TableCell>Account</TableCell>
@@ -298,24 +292,27 @@ const Expenses = () => {
               </TableHead>
               <TableBody>
                 {expenses.length === 0 ? (
-                  <TableRow><TableCell colSpan={isAndroidApk ? 6 : 7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No expenses found</Typography></TableCell></TableRow>
                 ) : (
-                  expenses.map((exp) => (
-                    <TableRow key={exp.id} hover>
-                      <TableCell>{exp.expenseDate}</TableCell>
-                      {!isAndroidApk && <TableCell>{formatTime(exp.createdAt)}</TableCell>}
-                      <TableCell sx={{ fontWeight: 600 }}>{exp.description}</TableCell>
-                      <TableCell>
-                        <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />
-                      </TableCell>
-                      <TableCell>{exp.accountName}</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>-₹{parseFloat(exp.amount).toFixed(2)}</TableCell>
-                      <TableCell align="center">
-                        <IconButton size="small" onClick={() => openEdit(exp)}><EditOutlined fontSize="small" /></IconButton>
-                        <IconButton size="small" color="error" onClick={() => handleDelete(exp.id)}><DeleteOutlineOutlined fontSize="small" /></IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  expenses.map((exp) => {
+                    const dt = formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate);
+                    return (
+                      <TableRow key={exp.id} hover>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{dt.dateStr}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>{dt.timeStr}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>{exp.description}</TableCell>
+                        <TableCell>
+                          <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />
+                        </TableCell>
+                        <TableCell>{exp.accountName}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>-₹{parseFloat(exp.amount).toFixed(2)}</TableCell>
+                        <TableCell align="center">
+                          <IconButton size="small" onClick={() => openEdit(exp)}><EditOutlined fontSize="small" /></IconButton>
+                          <IconButton size="small" color="error" onClick={() => handleDelete(exp.id)}><DeleteOutlineOutlined fontSize="small" /></IconButton>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

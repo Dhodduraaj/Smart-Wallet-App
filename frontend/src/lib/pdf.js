@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { formatTransactionDateTime } from './transactionSorter.js';
 
 export function generatePdfReportLocal(reportDto, omitCategory = false) {
   const doc = new jsPDF({
@@ -48,7 +49,7 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
 
     const incomeHeaders = [['Date', 'Description', 'Account', 'Amount']];
     const incomeRows = reportDto.incomes.map(inc => [
-      inc.incomeDate ? inc.incomeDate.toString() : '',
+      formatTransactionDateTime(inc.transactionDateTime || inc.createdAt || inc.incomeDate).dateStr,
       inc.description || '',
       inc.accountName || '',
       `₹${parseFloat(inc.amount || 0).toFixed(2)}`
@@ -111,7 +112,7 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
     if (omitCategory) {
       expenseHeaders = [['Date', 'Description', 'Amount']];
       expenseRows = reportDto.expenses.map(exp => [
-        exp.expenseDate ? exp.expenseDate.toString() : '',
+        formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate).dateStr,
         exp.description || '',
         `₹${parseFloat(exp.amount || 0).toFixed(2)}`
       ]);
@@ -123,7 +124,7 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
     } else {
       expenseHeaders = [['Date', 'Description', 'Category', 'Amount']];
       expenseRows = reportDto.expenses.map(exp => [
-        exp.expenseDate ? exp.expenseDate.toString() : '',
+        formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate).dateStr,
         exp.description || '',
         exp.category || '',
         `₹${parseFloat(exp.amount || 0).toFixed(2)}`

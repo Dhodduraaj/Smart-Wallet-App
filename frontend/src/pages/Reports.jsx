@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import api from '../lib/api';
 import { generatePdfReportLocal } from '../lib/pdf';
+import { sortTransactions, formatTransactionDateTime } from '../lib/transactionSorter';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import {
@@ -67,6 +68,10 @@ const Reports = () => {
     } else if (filterTransactionType === 'expense') {
       incomes = [];
     }
+
+    // Deterministic sort: newest -> oldest
+    expenses = sortTransactions(expenses);
+    incomes = sortTransactions(incomes);
 
     const totalIncome = incomes.reduce((sum, inc) => sum + parseFloat(inc.amount || 0), 0);
     const totalExpenses = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
@@ -279,9 +284,17 @@ const Reports = () => {
                       <TableRow><TableCell>Date</TableCell><TableCell>Description</TableCell><TableCell>Category</TableCell><TableCell align="right">Amount</TableCell></TableRow>
                     </TableHead>
                     <TableBody>
-                      {filteredReportData.expenses.map((e) => (
-                        <TableRow key={e.id}><TableCell>{e.expenseDate}</TableCell><TableCell>{e.description}</TableCell><TableCell>{e.category}</TableCell><TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>₹{parseFloat(e.amount).toFixed(2)}</TableCell></TableRow>
-                      ))}
+                      {filteredReportData.expenses.map((e) => {
+                        const dt = formatTransactionDateTime(e.transactionDateTime || e.createdAt || e.expenseDate);
+                        return (
+                          <TableRow key={e.id}>
+                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{dt.dateStr}</TableCell>
+                            <TableCell>{e.description}</TableCell>
+                            <TableCell>{e.category}</TableCell>
+                            <TableCell align="right" sx={{ color: 'error.main', fontWeight: 600 }}>₹{parseFloat(e.amount).toFixed(2)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>
@@ -298,9 +311,17 @@ const Reports = () => {
                   <Table size="small" sx={{ minWidth: 480 }}>
                     <TableHead><TableRow><TableCell>Date</TableCell><TableCell>Description</TableCell><TableCell>Account</TableCell><TableCell align="right">Amount</TableCell></TableRow></TableHead>
                     <TableBody>
-                      {filteredReportData.incomes.map((inc) => (
-                        <TableRow key={inc.id}><TableCell>{inc.incomeDate}</TableCell><TableCell>{inc.description}</TableCell><TableCell>{inc.accountName}</TableCell><TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>₹{parseFloat(inc.amount).toFixed(2)}</TableCell></TableRow>
-                      ))}
+                      {filteredReportData.incomes.map((inc) => {
+                        const dt = formatTransactionDateTime(inc.transactionDateTime || inc.createdAt || inc.incomeDate);
+                        return (
+                          <TableRow key={inc.id}>
+                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{dt.dateStr}</TableCell>
+                            <TableCell>{inc.description}</TableCell>
+                            <TableCell>{inc.accountName}</TableCell>
+                            <TableCell align="right" sx={{ color: 'success.main', fontWeight: 600 }}>₹{parseFloat(inc.amount).toFixed(2)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>

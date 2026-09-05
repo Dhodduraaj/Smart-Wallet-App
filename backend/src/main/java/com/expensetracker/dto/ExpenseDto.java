@@ -43,6 +43,8 @@ public class ExpenseDto {
 
     private String notes;
 
+    private String transactionDateTime;
+
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private Instant createdAt;
 }

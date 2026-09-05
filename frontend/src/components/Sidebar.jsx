@@ -34,6 +34,7 @@ import {
   AccountBalanceWalletOutlined,
   InfoOutlined,
   SwapHorizOutlined,
+  PeopleAltOutlined,
 } from '@mui/icons-material';
 
 const drawerWidth = 260;
@@ -57,6 +58,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
     { text: 'Expenses', icon: <ReceiptLongOutlined />, path: '/expenses' },
     { text: 'Self Transfer', icon: <SwapHorizOutlined />, onClick: onSelfTransferClick },
     { text: 'Reminders', icon: <NotificationsNoneOutlined />, path: '/reminders' },
+    { text: 'People', icon: <PeopleAltOutlined />, path: '/people' },
     { text: 'Calculator', icon: <CalculateOutlined />, path: '/calculator' },
     { text: 'Reports', icon: <AssessmentOutlined />, path: '/reports' },
     { text: 'Profile', icon: <PersonOutlineOutlined />, path: '/profile' },

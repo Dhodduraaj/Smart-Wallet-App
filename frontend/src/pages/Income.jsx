@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import {
+  formatTransactionDateTime,
+  createTransactionDateTime
+} from '../lib/transactionSorter';
+import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, CircularProgress, Grid,
@@ -38,11 +42,10 @@ const Income = () => {
 
   const fetchIncomes = async () => {
     try {
-      const params = new URLSearchParams({ page, size: rowsPerPage, sort: 'incomeDate,desc' });
+      const params = new URLSearchParams({ page, size: rowsPerPage });
       if (search) params.append('search', search);
       const res = await api.get(`/api/incomes?${params}`);
-      const sorted = [...(res.data.content || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setIncomes(sorted);
+      setIncomes(res.data.content || []);
       setTotalElements(res.data.totalElements || 0);
     } catch {
       toast.error('Failed to load income records');
@@ -107,7 +110,15 @@ const Income = () => {
     if (!form.description || !form.amount || !form.accountId) { toast.error('Fill required fields'); return; }
     setSubmitting(true);
     try {
-      const payload = { ...form, amount: parseFloat(form.amount) };
+      const existingIncome = editId ? incomes.find(i => i.id === editId) : null;
+      const transactionDateTime = existingIncome?.transactionDateTime || createTransactionDateTime(form.incomeDate);
+
+      const payload = {
+        ...form,
+        amount: parseFloat(form.amount),
+        transactionDateTime,
+        createdAt: existingIncome?.createdAt || transactionDateTime
+      };
       if (editId) { await api.put(`/api/incomes/${editId}`, payload); toast.success('Income updated'); }
       else { await api.post('/api/incomes', payload); toast.success('Income added'); }
       setDialogOpen(false); fetchIncomes();
@@ -168,9 +179,14 @@ const Income = () => {
                       <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
                         {inc.description}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {inc.incomeDate}
-                      </Typography>
+                      {(() => {
+                        const dt = formatTransactionDateTime(inc.transactionDateTime || inc.createdAt || inc.incomeDate);
+                        return (
+                          <Typography variant="caption" color="text.secondary">
+                            {dt.dateStr} • {dt.timeStr}
+                          </Typography>
+                        );
+                      })()}
                     </Box>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'success.main' }}>
                       +₹{parseFloat(inc.amount).toFixed(2)}
@@ -221,6 +237,7 @@ const Income = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Date</TableCell>
+                  <TableCell>Time</TableCell>
                   <TableCell>Description</TableCell>
                   <TableCell>Account</TableCell>
                   <TableCell>Notes</TableCell>
@@ -230,21 +247,25 @@ const Income = () => {
               </TableHead>
               <TableBody>
                 {incomes.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No income records</Typography></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}><Typography color="text.secondary">No income records</Typography></TableCell></TableRow>
                 ) : (
-                  incomes.map((inc) => (
-                    <TableRow key={inc.id} hover>
-                      <TableCell>{inc.incomeDate}</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>{inc.description}</TableCell>
-                      <TableCell>{inc.accountName}</TableCell>
-                      <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inc.notes || '—'}</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>+₹{parseFloat(inc.amount).toFixed(2)}</TableCell>
-                      <TableCell align="center">
-                        <IconButton size="small" onClick={() => openEdit(inc)}><EditOutlined fontSize="small" /></IconButton>
-                        <IconButton size="small" color="error" onClick={() => handleDelete(inc.id)}><DeleteOutlineOutlined fontSize="small" /></IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  incomes.map((inc) => {
+                    const dt = formatTransactionDateTime(inc.transactionDateTime || inc.createdAt || inc.incomeDate);
+                    return (
+                      <TableRow key={inc.id} hover>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>{dt.dateStr}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>{dt.timeStr}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>{inc.description}</TableCell>
+                        <TableCell>{inc.accountName}</TableCell>
+                        <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inc.notes || '—'}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>+₹{parseFloat(inc.amount).toFixed(2)}</TableCell>
+                        <TableCell align="center">
+                          <IconButton size="small" onClick={() => openEdit(inc)}><EditOutlined fontSize="small" /></IconButton>
+                          <IconButton size="small" color="error" onClick={() => handleDelete(inc.id)}><DeleteOutlineOutlined fontSize="small" /></IconButton>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

@@ -1,4 +1,9 @@
 import { Preferences } from '@capacitor/preferences';
+import {
+  createTransactionDateTime,
+  sortTransactions,
+  aggregateCategoriesForChart
+} from './transactionSorter.js';
 
 const STORAGE_KEY = 'smart_wallet_data';
 
@@ -48,6 +53,8 @@ export function getStoredData() {
         incomes: [],
         reminders: [],
         transfers: [],
+        people: [],
+        peopleLedger: [],
         settings: {
           dailyReminderConfig: { enabled: false, reminderTime: '21:00', reminderZoneId: 'UTC' }
         }
@@ -56,6 +63,10 @@ export function getStoredData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } else {
     store = JSON.parse(raw);
+    if (store.data) {
+      if (!store.data.people) store.data.people = [];
+      if (!store.data.peopleLedger) store.data.peopleLedger = [];
+    }
   }
 
   // Enforcement logic: Every user must always have a default Cash account
@@ -217,13 +228,8 @@ export async function getLocalExpenses(params = {}) {
     records = records.filter(r => r.accountId === accountId);
   }
 
-  // Sort by expenseDate desc, then createdAt desc
-  records.sort((a, b) => {
-    const dateA = new Date(a.expenseDate || 0);
-    const dateB = new Date(b.expenseDate || 0);
-    if (dateB - dateA !== 0) return dateB - dateA;
-    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-  });
+  // Deterministic sort: transactionDateTime DESC then id DESC BEFORE slicing
+  records = sortTransactions(records);
 
   const content = records.slice(page * size, (page + 1) * size);
   return {
@@ -256,12 +262,14 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
     }
   }
 
+  const transactionDateTime = expenseData.transactionDateTime || createTransactionDateTime(expenseData.expenseDate);
   const updatedData = {
     ...expenseData,
     id,
     accountName,
     amount: parseFloat(expenseData.amount || 0),
-    createdAt: expenseData.createdAt || new Date().toISOString()
+    transactionDateTime,
+    createdAt: expenseData.createdAt || transactionDateTime
   };
 
   const isNew = index === -1;
@@ -327,13 +335,8 @@ export async function getLocalIncomes(params = {}) {
     records = records.filter(r => r.accountId === accountId);
   }
 
-  // Sort by incomeDate desc, then createdAt desc
-  records.sort((a, b) => {
-    const dateA = new Date(a.incomeDate || 0);
-    const dateB = new Date(b.incomeDate || 0);
-    if (dateB - dateA !== 0) return dateB - dateA;
-    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-  });
+  // Deterministic sort: transactionDateTime DESC then id DESC BEFORE slicing
+  records = sortTransactions(records);
 
   const content = records.slice(page * size, (page + 1) * size);
   return {
@@ -366,12 +369,14 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
     }
   }
 
+  const transactionDateTime = incomeData.transactionDateTime || createTransactionDateTime(incomeData.incomeDate);
   const updatedData = {
     ...incomeData,
     id,
     accountName,
     amount: parseFloat(incomeData.amount || 0),
-    createdAt: incomeData.createdAt || new Date().toISOString()
+    transactionDateTime,
+    createdAt: incomeData.createdAt || transactionDateTime
   };
 
   const isNew = index === -1;
@@ -567,26 +572,10 @@ export async function getLocalDashboardSummary() {
     })
     .reduce((sum, inc) => sum + parseFloat(inc.amount || 0), 0);
 
-  // Category Expenses Breakdown
-  const catMap = {};
-  expenses
-    .filter(e => {
-      const d = new Date(e.expenseDate);
-      return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-    })
-    .forEach(e => {
-      const cat = e.category || 'Others';
-      const amt = parseFloat(e.amount || 0);
-      catMap[cat] = (catMap[cat] || 0) + amt;
-    });
-
-  const categoryExpenses = Object.entries(catMap).map(([category, amount]) => {
-    let percentage = 0;
-    if (monthlyExpenses > 0) {
-      percentage = parseFloat(((amount / monthlyExpenses) * 100).toFixed(2));
-    }
-    return { category, amount, percentage };
-  }).sort((a, b) => b.amount - a.amount);
+  // Category Expenses Breakdown (built-in categories + custom aggregated as Others)
+  const chartAggregation = aggregateCategoriesForChart(expenses, currentYear, currentMonth);
+  const categoryExpenses = chartAggregation.categoryExpenses;
+  const othersBreakdown = chartAggregation.othersBreakdown;
 
   // Monthly Trends (Last 6 Months)
   const monthlyTrends = [];
@@ -599,14 +588,16 @@ export async function getLocalDashboardSummary() {
 
     const monthExp = expenses
       .filter(e => {
-        const d = new Date(e.expenseDate);
+        const dt = e.transactionDateTime || e.expenseDate;
+        const d = new Date(dt);
         return d.getFullYear() === y && d.getMonth() === m;
       })
       .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
 
     const monthInc = incomes
       .filter(inc => {
-        const d = new Date(inc.incomeDate);
+        const dt = inc.transactionDateTime || inc.incomeDate;
+        const d = new Date(dt);
         return d.getFullYear() === y && d.getMonth() === m;
       })
       .reduce((sum, inc) => sum + parseFloat(inc.amount || 0), 0);
@@ -618,10 +609,8 @@ export async function getLocalDashboardSummary() {
     });
   }
 
-  // Recent Expenses (Top 5)
-  const sortedExpenses = [...expenses].sort((a, b) => {
-    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-  });
+  // Recent Expenses (Top 5 deterministically sorted newest -> oldest)
+  const sortedExpenses = sortTransactions(expenses);
   const recentExpenses = sortedExpenses.slice(0, 5);
 
   return {
@@ -630,6 +619,7 @@ export async function getLocalDashboardSummary() {
     monthlyExpenses,
     monthlyIncome,
     categoryExpenses,
+    othersBreakdown,
     monthlyTrends,
     recentExpenses
   };
@@ -676,13 +666,16 @@ export async function getLocalReportData(startDate, endDate) {
     return { category, amount, percentage };
   }).sort((a, b) => b.amount - a.amount);
 
+  const sortedExpenses = sortTransactions(filteredExpenses);
+  const sortedIncomes = sortTransactions(filteredIncomes);
+
   return {
     startDate,
     endDate,
     fullName: profile.fullName || 'User',
     email: profile.email || '',
-    expenses: filteredExpenses,
-    incomes: filteredIncomes,
+    expenses: sortedExpenses,
+    incomes: sortedIncomes,
     totalExpenses,
     totalIncome,
     netSavings,
@@ -717,5 +710,202 @@ export async function restoreDbFromBackup(backupObj) {
     }
   };
   
+  if (restoredData.people) {
+    merged.data.people = restoredData.people;
+  }
+  if (restoredData.peopleLedger) {
+    merged.data.peopleLedger = restoredData.peopleLedger;
+  }
+  
   saveStoredData(merged);
 }
+
+// ==========================================================
+// People & Memory Ledger Helpers (Financially Isolated)
+// ==========================================================
+
+export async function getLocalPeople(search = '') {
+  const store = getStoredData();
+  let people = (store.data.people || []).filter(p => p.deleted !== true);
+
+  if (search) {
+    const q = search.toLowerCase().trim();
+    people = people.filter(p => (p.name || '').toLowerCase().includes(q));
+  }
+
+  const ledgerEntries = (store.data.peopleLedger || []).filter(e => e.deleted !== true);
+
+  const peopleWithBalances = people.map(p => {
+    const entries = ledgerEntries.filter(e => e.personId === p.id);
+    const totalIncoming = entries.reduce((sum, e) => sum + parseFloat(e.incomingMoney || 0), 0);
+    const totalOutgoing = entries.reduce((sum, e) => sum + parseFloat(e.outgoingMoney || 0), 0);
+    const balance = totalIncoming - totalOutgoing; // Incoming increases balance, Outgoing decreases balance
+    
+    // Sort entries to find latest activity
+    const sorted = sortTransactions(entries.map(e => ({ ...e, transactionDateTime: e.date || e.createdAt })));
+    const lastEntryDate = sorted.length > 0 ? (sorted[0].date || sorted[0].createdAt) : p.createdAt;
+
+    return {
+      ...p,
+      totalIncoming,
+      totalOutgoing,
+      balance,
+      entryCount: entries.length,
+      lastActive: lastEntryDate
+    };
+  });
+
+  // Deterministic sort by name ASC, then id ASC
+  peopleWithBalances.sort((a, b) => {
+    const nameCmp = (a.name || '').localeCompare(b.name || '');
+    if (nameCmp !== 0) return nameCmp;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+
+  return peopleWithBalances;
+}
+
+export async function getLocalPerson(id) {
+  const store = getStoredData();
+  const person = (store.data.people || []).find(p => p.id === id && p.deleted !== true);
+  if (!person) return null;
+
+  const ledgerEntries = (store.data.peopleLedger || []).filter(e => e.personId === id && e.deleted !== true);
+  const totalIncoming = ledgerEntries.reduce((sum, e) => sum + parseFloat(e.incomingMoney || 0), 0);
+  const totalOutgoing = ledgerEntries.reduce((sum, e) => sum + parseFloat(e.outgoingMoney || 0), 0);
+  const balance = totalIncoming - totalOutgoing;
+
+  return {
+    ...person,
+    totalIncoming,
+    totalOutgoing,
+    balance,
+    entryCount: ledgerEntries.length
+  };
+}
+
+export async function saveLocalPerson(personData) {
+  const store = getStoredData();
+  const people = store.data.people || [];
+  const name = (personData.name || '').trim();
+
+  if (!name) {
+    throw new Error('Person name is required');
+  }
+
+  const id = personData.id || generateUUID();
+  const index = people.findIndex(p => p.id === id);
+  const now = new Date().toISOString();
+
+  const record = {
+    ...personData,
+    id,
+    name,
+    createdAt: index !== -1 ? (people[index].createdAt || now) : now,
+    updatedAt: now,
+    deleted: false
+  };
+
+  if (index !== -1) {
+    people[index] = record;
+  } else {
+    people.push(record);
+  }
+
+  store.data.people = people;
+  saveStoredData(store);
+  return record;
+}
+
+export async function deleteLocalPerson(id) {
+  const store = getStoredData();
+  store.data.people = (store.data.people || []).filter(p => p.id !== id);
+  // Also remove their ledger entries
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => e.personId !== id);
+  saveStoredData(store);
+}
+
+export async function getLocalPersonLedger(personId) {
+  const store = getStoredData();
+  const entries = (store.data.peopleLedger || []).filter(e => e.personId === personId && e.deleted !== true);
+
+  // 1. Sort chronologically oldest -> newest to calculate running total
+  const chronoEntries = [...entries].sort((a, b) => {
+    const timeA = new Date(a.date || a.createdAt || 0).getTime();
+    const timeB = new Date(b.date || b.createdAt || 0).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+
+  let runningTotal = 0;
+  const entriesWithRunningTotal = chronoEntries.map(e => {
+    const inc = parseFloat(e.incomingMoney || 0);
+    const out = parseFloat(e.outgoingMoney || 0);
+    runningTotal += (inc - out);
+    return {
+      ...e,
+      total: runningTotal,
+      transactionDateTime: e.date || e.createdAt
+    };
+  });
+
+  // 2. Return sorted newest -> oldest deterministically
+  return sortTransactions(entriesWithRunningTotal);
+}
+
+export async function saveLocalPersonLedgerEntry(entryData) {
+  const store = getStoredData();
+  const ledger = store.data.peopleLedger || [];
+  const id = entryData.id || generateUUID();
+  const index = ledger.findIndex(e => e.id === id);
+
+  if (!entryData.personId) {
+    throw new Error('personId is required for ledger entry');
+  }
+
+  const incomingMoney = parseFloat(entryData.incomingMoney || 0);
+  const outgoingMoney = parseFloat(entryData.outgoingMoney || 0);
+
+  if (isNaN(incomingMoney) || incomingMoney < 0) {
+    throw new Error('Incoming money must be a valid non-negative amount');
+  }
+  if (isNaN(outgoingMoney) || outgoingMoney < 0) {
+    throw new Error('Outgoing money must be a valid non-negative amount');
+  }
+  if (incomingMoney === 0 && outgoingMoney === 0) {
+    throw new Error('Either incoming or outgoing money must be greater than 0');
+  }
+
+  const now = new Date().toISOString();
+  const date = entryData.date || (entryData.selectedDate ? createTransactionDateTime(entryData.selectedDate) : now);
+
+  const record = {
+    ...entryData,
+    id,
+    personId: entryData.personId,
+    details: (entryData.details || '').trim(),
+    incomingMoney,
+    outgoingMoney,
+    date,
+    createdAt: index !== -1 ? (ledger[index].createdAt || now) : now,
+    updatedAt: now,
+    deleted: false
+  };
+
+  if (index !== -1) {
+    ledger[index] = record;
+  } else {
+    ledger.push(record);
+  }
+
+  store.data.peopleLedger = ledger;
+  saveStoredData(store);
+  return record;
+}
+
+export async function deleteLocalPersonLedgerEntry(id) {
+  const store = getStoredData();
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => e.id !== id);
+  saveStoredData(store);
+}
+
