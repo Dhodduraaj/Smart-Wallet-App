@@ -2,7 +2,8 @@ import { Preferences } from '@capacitor/preferences';
 import {
   createTransactionDateTime,
   sortTransactions,
-  aggregateCategoriesForChart
+  aggregateCategoriesForChart,
+  isDefaultCategory
 } from './transactionSorter.js';
 
 const STORAGE_KEY = 'smart_wallet_data';
@@ -221,7 +222,12 @@ export async function getLocalExpenses(params = {}) {
   }
 
   if (category) {
-    records = records.filter(r => (r.category || '').toLowerCase() === category.toLowerCase());
+    const targetCat = category.trim().toLowerCase();
+    if (targetCat === 'others') {
+      records = records.filter(r => !isDefaultCategory(r.category) || (r.category || '').toLowerCase() === 'others');
+    } else {
+      records = records.filter(r => (r.category || '').toLowerCase() === targetCat);
+    }
   }
 
   if (accountId) {
@@ -777,11 +783,32 @@ export async function getLocalPerson(id) {
 
   return {
     ...person,
+    note: person.note || '',
     totalIncoming,
     totalOutgoing,
     balance,
     entryCount: ledgerEntries.length
   };
+}
+
+export async function saveLocalPersonNote(personId, noteText) {
+  const store = getStoredData();
+  const people = store.data.people || [];
+  const index = people.findIndex(p => p.id === personId);
+  if (index === -1) {
+    throw new Error('Person not found');
+  }
+
+  const now = new Date().toISOString();
+  people[index] = {
+    ...people[index],
+    note: typeof noteText === 'string' ? noteText : '',
+    updatedAt: now
+  };
+
+  store.data.people = people;
+  saveStoredData(store);
+  return people[index];
 }
 
 export async function saveLocalPerson(personData) {
@@ -859,7 +886,8 @@ export async function saveLocalPersonLedgerEntry(entryData) {
   const id = entryData.id || generateUUID();
   const index = ledger.findIndex(e => e.id === id);
 
-  if (!entryData.personId) {
+  const personId = entryData.personId || (index !== -1 ? ledger[index].personId : null);
+  if (!personId) {
     throw new Error('personId is required for ledger entry');
   }
 
@@ -877,12 +905,13 @@ export async function saveLocalPersonLedgerEntry(entryData) {
   }
 
   const now = new Date().toISOString();
-  const date = entryData.date || (entryData.selectedDate ? createTransactionDateTime(entryData.selectedDate) : now);
+  const date = entryData.date || (entryData.selectedDate ? createTransactionDateTime(entryData.selectedDate) : (index !== -1 ? ledger[index].date : now));
 
   const record = {
+    ...(index !== -1 ? ledger[index] : {}),
     ...entryData,
     id,
-    personId: entryData.personId,
+    personId,
     details: (entryData.details || '').trim(),
     incomingMoney,
     outgoingMoney,

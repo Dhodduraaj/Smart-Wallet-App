@@ -26,6 +26,13 @@ import {
   TextField,
   MenuItem,
   Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from '@mui/material';
 import {
   AccountBalanceWalletOutlined,
@@ -777,66 +784,58 @@ const Dashboard = () => {
       <Dialog
         open={othersDialogOpen}
         onClose={() => setOthersDialogOpen(false)}
-        maxWidth="sm"
+        maxWidth="xs"
         fullWidth
       >
-        <DialogTitle sx={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Others — Custom Categories</Typography>
-            <Typography variant="caption" color="text.secondary">Detailed breakdown of custom expense categories</Typography>
-          </Box>
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>Others</Typography>
           <Typography variant="h6" sx={{ fontWeight: 800, color: 'error.main' }}>
             ₹{parseFloat(othersData?.amount || othersData?.total || 0).toFixed(2)}
           </Typography>
         </DialogTitle>
-        <DialogContent dividers sx={{ p: 2 }}>
-          {/* Custom Categories Summary */}
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>Custom Categories</Typography>
-          {(!othersData?.customCategories || othersData.customCategories.length === 0) && (!othersData?.categories || othersData.categories.length === 0) ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>No custom categories found in this period.</Typography>
-          ) : (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-              {(othersData?.customCategories || othersData?.categories || []).map((cat, idx) => (
-                <Chip
-                  key={idx}
-                  label={`${cat.category}: ₹${parseFloat(cat.amount).toFixed(2)} (${cat.percentage}%)`}
-                  sx={{ fontWeight: 600, bgcolor: 'action.hover' }}
-                />
-              ))}
-            </Box>
-          )}
+        <DialogContent dividers sx={{ p: 0 }}>
+          {(() => {
+            const categoriesList = [
+              ...(othersData?.customCategories || othersData?.categories || [])
+            ].sort((a, b) => {
+              const diff = (parseFloat(b.amount || 0) - parseFloat(a.amount || 0));
+              if (diff !== 0) return diff;
+              return String(a.category || '').localeCompare(String(b.category || ''));
+            });
 
-          {/* Transactions List */}
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-            Underlying Transactions ({othersData?.transactions?.length || 0})
-          </Typography>
-          {(!othersData?.transactions || othersData.transactions.length === 0) ? (
-            <Typography variant="body2" color="text.secondary">No individual transactions recorded under custom categories.</Typography>
-          ) : (
-            <List sx={{ py: 0 }}>
-              {othersData.transactions.map((tx, idx) => {
-                const dt = formatTransactionDateTime(tx.transactionDateTime || tx.createdAt || tx.expenseDate);
-                return (
-                  <React.Fragment key={tx.id || idx}>
-                    <ListItem sx={{ py: 1, px: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <Box sx={{ pr: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{tx.description}</Typography>
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
-                          <Chip label={tx.category} size="small" sx={{ fontSize: '0.7rem', height: 20 }} />
-                          <Typography variant="caption" color="text.secondary">{dt.dateStr} • {dt.timeStr}</Typography>
-                          {tx.accountName && <Typography variant="caption" color="text.secondary">• {tx.accountName}</Typography>}
-                        </Box>
-                      </Box>
-                      <Typography variant="body2" sx={{ fontWeight: 700, color: 'error.main', whiteSpace: 'nowrap' }}>
-                        -₹{parseFloat(tx.amount || 0).toFixed(2)}
-                      </Typography>
-                    </ListItem>
-                    {idx < othersData.transactions.length - 1 && <Divider />}
-                  </React.Fragment>
-                );
-              })}
-            </List>
-          )}
+            if (categoriesList.length === 0) {
+              return (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">No custom categories found.</Typography>
+                </Box>
+              );
+            }
+
+            return (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'action.hover' }}>
+                      <TableCell sx={{ fontWeight: 700, py: 1.5, pl: 3 }}>Category</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, py: 1.5, pr: 3 }}>Total Expenses</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {categoriesList.map((cat, idx) => (
+                      <TableRow key={cat.category || idx} hover>
+                        <TableCell sx={{ fontWeight: 600, py: 1.5, pl: 3 }}>
+                          {cat.category}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, py: 1.5, pr: 3, color: 'error.main' }}>
+                          ₹{parseFloat(cat.amount || 0).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 1.5 }}>
           <Button variant="outlined" onClick={() => setOthersDialogOpen(false)}>Close</Button>

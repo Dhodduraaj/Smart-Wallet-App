@@ -25,6 +25,29 @@ export function isBuiltInCategory(category) {
 }
 
 /**
+ * Single source of truth alias for default/built-in category check
+ */
+export const isDefaultCategory = isBuiltInCategory;
+
+/**
+ * Dynamically determines all custom categories used by expenses
+ * (all expense categories MINUS default categories)
+ * @param {Array} expenses
+ * @returns {Array<string>}
+ */
+export function getCustomExpenseCategories(expenses) {
+  if (!Array.isArray(expenses)) return [];
+  const customSet = new Set();
+  expenses.forEach(e => {
+    const cat = (e.category || '').trim();
+    if (cat && !isDefaultCategory(cat) && cat.toLowerCase() !== 'others') {
+      customSet.add(cat);
+    }
+  });
+  return Array.from(customSet).sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * Creates a reliable machine-readable ISO datetime string using the device's
  * current local date and time, optionally preserving a user-chosen date.
  *

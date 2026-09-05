@@ -333,12 +333,30 @@ const customOfflineAdapter = async (config) => {
       }
     }
 
-    const personLedgerEntryMatch = cleanUrl.match(/\/api\/people\/ledger\/([^/]+)$/);
-    if (personLedgerEntryMatch && method === 'DELETE') {
-      const entryId = personLedgerEntryMatch[1];
-      await localDb.deleteLocalPersonLedgerEntry(entryId);
+    const personNoteMatch = cleanUrl.match(/\/api\/people\/([^/]+)\/note$/);
+    if (personNoteMatch && method === 'PUT') {
+      const personId = personNoteMatch[1];
+      const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const noteText = payload.noteText !== undefined ? payload.noteText : (payload.note !== undefined ? payload.note : '');
+      const updated = await localDb.saveLocalPersonNote(personId, noteText);
       setTimeout(() => sync(), 100);
-      return mockResponse(null, 204);
+      return mockResponse(updated);
+    }
+
+    const personLedgerEntryMatch = cleanUrl.match(/\/api\/people\/ledger\/([^/]+)$/);
+    if (personLedgerEntryMatch) {
+      const entryId = personLedgerEntryMatch[1];
+      if (method === 'PUT') {
+        const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+        const updated = await localDb.saveLocalPersonLedgerEntry({ ...payload, id: entryId });
+        setTimeout(() => sync(), 100);
+        return mockResponse(updated);
+      }
+      if (method === 'DELETE') {
+        await localDb.deleteLocalPersonLedgerEntry(entryId);
+        setTimeout(() => sync(), 100);
+        return mockResponse(null, 204);
+      }
     }
 
     const personIdMatch = cleanUrl.match(/\/api\/people\/([^/]+)$/);
