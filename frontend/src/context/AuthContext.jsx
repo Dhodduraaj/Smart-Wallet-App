@@ -6,6 +6,16 @@ import { Preferences } from '@capacitor/preferences';
 
 const AuthContext = createContext(null);
 
+const buildUserProfile = (store) => {
+  if (!store || !store.data || !store.data.profile) return null;
+  const uid = store.localUserId || store.data.profile.userId || store.data.profile.id;
+  return {
+    ...store.data.profile,
+    userId: uid,
+    id: uid
+  };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -27,7 +37,7 @@ export const AuthProvider = ({ children }) => {
         const store = getStoredData();
         // Startup logic: IF isAuthenticated == true -> go to home, ELSE -> show login screen
         if (store && store.isAuthenticated === true && store.data && store.data.profile) {
-          setUser(store.data.profile);
+          setUser(buildUserProfile(store));
         } else {
           setUser(null);
         }
@@ -96,7 +106,7 @@ export const AuthProvider = ({ children }) => {
       store.data.profile.fullName = normalizedEmail.split('@')[0]; // Simple fallback name
       saveStoredData(store);
       
-      const localProfile = store.data.profile;
+      const localProfile = buildUserProfile(store);
       setUser(localProfile);
 
       // Try pulling backup from server if online
@@ -107,7 +117,7 @@ export const AuthProvider = ({ children }) => {
             // Restore from sync backup
             await restoreDbFromBackup(response.data);
             const updatedStore = getStoredData();
-            setUser(updatedStore.data.profile);
+            setUser(buildUserProfile(updatedStore));
           }
         } catch (pullErr) {
           console.warn('[Auth Login] Failed to pull user backup or user has no backup yet:', pullErr);
@@ -141,7 +151,7 @@ export const AuthProvider = ({ children }) => {
       store.data.profile.fullName = fullName;
       saveStoredData(store);
       
-      const localProfile = store.data.profile;
+      const localProfile = buildUserProfile(store);
       setUser(localProfile);
 
       // Trigger background sync
@@ -166,7 +176,7 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = async () => {
     const store = getStoredData();
-    const localProfile = store.data?.profile || { fullName: 'Local User', email: '' };
+    const localProfile = buildUserProfile(store) || { fullName: 'Local User', email: '', userId: store.localUserId, id: store.localUserId };
     setUser(localProfile);
     return localProfile;
   };

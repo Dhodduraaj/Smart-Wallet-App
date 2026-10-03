@@ -86,6 +86,45 @@ export function createTransactionDateTime(selectedDate) {
 }
 
 /**
+ * Updates a transaction's datetime string with a new selected date (YYYY-MM-DD),
+ * preserving original time-of-day if available, or attaching current device time.
+ *
+ * @param {string|Date} [existingDateTime] - Optional existing timestamp
+ * @param {string} [newSelectedDate] - New date in YYYY-MM-DD format
+ * @returns {string} ISO 8601 string with the new date and preserved/current time
+ */
+export function updateTransactionDateTime(existingDateTime, newSelectedDate) {
+  if (!newSelectedDate) {
+    return existingDateTime || createTransactionDateTime();
+  }
+
+  const parts = String(newSelectedDate).split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+
+    if (existingDateTime) {
+      const prev = new Date(existingDateTime);
+      if (!isNaN(prev.getTime())) {
+        const combined = new Date(y, m, d, prev.getHours(), prev.getMinutes(), prev.getSeconds(), prev.getMilliseconds());
+        if (!isNaN(combined.getTime())) {
+          return combined.toISOString();
+        }
+      }
+    }
+
+    const now = new Date();
+    const combined = new Date(y, m, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+    if (!isNaN(combined.getTime())) {
+      return combined.toISOString();
+    }
+  }
+
+  return createTransactionDateTime(newSelectedDate);
+}
+
+/**
  * Formats a timestamp into human-readable Date and Time strings using the
  * device's local timezone.
  *

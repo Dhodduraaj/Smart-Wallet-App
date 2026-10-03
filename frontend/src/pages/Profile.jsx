@@ -7,9 +7,10 @@ import {
 import {
   PersonOutlineOutlined, EmailOutlined, CalendarTodayOutlined, LogoutOutlined, LockOutlined, EditOutlined,
   ExpandMore, ExpandLess, AccountBalanceOutlined, ContentCopyOutlined, ShareOutlined, DeleteOutlined,
-  SupportAgent, CallOutlined
+  SupportAgent, CallOutlined, PermIdentityOutlined
 } from '@mui/icons-material';
 import api from '../lib/api';
+import { getStoredData } from '../lib/db';
 import { toast } from 'react-hot-toast';
 import PasswordField from '../components/PasswordField';
 
@@ -45,6 +46,8 @@ const maskUserId = (id) => {
 
 const Profile = () => {
   const { user, logout, refreshUser } = useAuth();
+  const store = getStoredData();
+  const userIdToDisplay = user?.userId || user?.id || store?.localUserId || '—';
 
   // Avatar selection state
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
@@ -249,12 +252,27 @@ const Profile = () => {
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <CalendarTodayOutlined color="primary" />
-                  <Box>
+                  <PermIdentityOutlined color="primary" />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography variant="caption" color="text.secondary">User ID</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                      {user?.userId || user?.id}
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        {userIdToDisplay}
+                      </Typography>
+                      {userIdToDisplay !== '—' && (
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            navigator.clipboard.writeText(userIdToDisplay);
+                            toast.success('User ID copied to clipboard');
+                          }}
+                          title="Copy User ID"
+                          sx={{ p: 0.5 }}
+                        >
+                          <ContentCopyOutlined sx={{ fontSize: '1rem' }} />
+                        </IconButton>
+                      )}
+                    </Box>
                   </Box>
                 </Box>
               </Box>

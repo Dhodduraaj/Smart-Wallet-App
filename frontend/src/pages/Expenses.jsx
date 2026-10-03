@@ -3,7 +3,8 @@ import { Capacitor } from '@capacitor/core';
 import api from '../lib/api';
 import {
   formatTransactionDateTime,
-  createTransactionDateTime
+  createTransactionDateTime,
+  updateTransactionDateTime
 } from '../lib/transactionSorter';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
@@ -120,15 +121,25 @@ const Expenses = () => {
   }, [page, rowsPerPage, search, filterCategory]);
 
   const openCreate = () => {
+    fetchAccounts().catch(() => {});
     setEditId(null);
     setForm({ ...emptyForm, accountId: accounts.length > 0 ? accounts[0].id : '' });
     setCustomCategory('');
     setDialogOpen(true);
   };
   const openEdit = (exp) => {
+    fetchAccounts().catch(() => {});
     setEditId(exp.id);
     const category = exp.category;
-    setForm({ accountId: exp.accountId, description: exp.description, amount: String(exp.amount), category: category, expenseDate: exp.expenseDate, notes: exp.notes || '' });
+    const initialDate = exp.expenseDate || (exp.transactionDateTime ? exp.transactionDateTime.split('T')[0] : '') || (exp.createdAt ? exp.createdAt.split('T')[0] : '') || getLocalDateString();
+    setForm({
+      accountId: exp.accountId,
+      description: exp.description,
+      amount: String(exp.amount),
+      category: category,
+      expenseDate: initialDate,
+      notes: exp.notes || ''
+    });
     setCustomCategory(category === 'Others' ? '' : category);
     setDialogOpen(true);
   };
@@ -140,27 +151,35 @@ const Expenses = () => {
     try {
       const categoryToSave = form.category === 'Others' ? customCategory.trim() : form.category;
       const existingExpense = editId ? expenses.find(e => e.id === editId) : null;
-      const transactionDateTime = existingExpense?.transactionDateTime || createTransactionDateTime(form.expenseDate);
+      const transactionDateTime = updateTransactionDateTime(
+        existingExpense?.transactionDateTime || existingExpense?.createdAt,
+        form.expenseDate
+      );
 
       const payload = {
         ...form,
         category: categoryToSave,
         amount: parseFloat(form.amount),
+        expenseDate: form.expenseDate,
         transactionDateTime,
         paymentMode: existingExpense?.paymentMode || 'Cash',
-        createdAt: existingExpense?.createdAt || transactionDateTime
+        createdAt: updateTransactionDateTime(existingExpense?.createdAt, form.expenseDate) || transactionDateTime
       };
       if (editId) { await api.put(`/api/expenses/${editId}`, payload); toast.success('Expense updated'); }
       else { await api.post('/api/expenses', payload); toast.success('Expense added'); }
-      setDialogOpen(false); fetchExpenses();
+      setDialogOpen(false);
+      await Promise.all([fetchAccounts(), fetchExpenses()]);
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to save expense'); }
     finally { setSubmitting(false); }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this expense? The amount will be refunded to the account.')) return;
-    try { await api.delete(`/api/expenses/${id}`); toast.success('Expense deleted & refunded'); fetchExpenses(); }
-    catch { toast.error('Failed to delete'); }
+    try {
+      await api.delete(`/api/expenses/${id}`);
+      toast.success('Expense deleted & refunded');
+      await Promise.all([fetchAccounts(), fetchExpenses()]);
+    } catch { toast.error('Failed to delete'); }
   };
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', pt: 10 }}><CircularProgress /></Box>;

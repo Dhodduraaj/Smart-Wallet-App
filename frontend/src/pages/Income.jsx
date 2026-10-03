@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import {
   formatTransactionDateTime,
-  createTransactionDateTime
+  createTransactionDateTime,
+  updateTransactionDateTime
 } from '../lib/transactionSorter';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
@@ -103,33 +104,58 @@ const Income = () => {
     };
   }, [page, rowsPerPage, search]);
 
-  const openCreate = () => { setEditId(null); setForm({ ...emptyForm, accountId: accounts[0]?.id || '' }); setDialogOpen(true); };
-  const openEdit = (inc) => { setEditId(inc.id); setForm({ accountId: inc.accountId, description: inc.description, amount: String(inc.amount), incomeDate: inc.incomeDate, notes: inc.notes || '' }); setDialogOpen(true); };
+  const openCreate = () => {
+    fetchAccounts().catch(() => {});
+    setEditId(null);
+    setForm({ ...emptyForm, accountId: accounts[0]?.id || '' });
+    setDialogOpen(true);
+  };
+  const openEdit = (inc) => {
+    fetchAccounts().catch(() => {});
+    setEditId(inc.id);
+    const initialDate = inc.incomeDate || (inc.transactionDateTime ? inc.transactionDateTime.split('T')[0] : '') || (inc.createdAt ? inc.createdAt.split('T')[0] : '') || getLocalDateString();
+    setForm({
+      accountId: inc.accountId,
+      description: inc.description,
+      amount: String(inc.amount),
+      incomeDate: initialDate,
+      notes: inc.notes || ''
+    });
+    setDialogOpen(true);
+  };
 
   const handleSave = async () => {
     if (!form.description || !form.amount || !form.accountId) { toast.error('Fill required fields'); return; }
     setSubmitting(true);
     try {
       const existingIncome = editId ? incomes.find(i => i.id === editId) : null;
-      const transactionDateTime = existingIncome?.transactionDateTime || createTransactionDateTime(form.incomeDate);
+      const transactionDateTime = updateTransactionDateTime(
+        existingIncome?.transactionDateTime || existingIncome?.createdAt,
+        form.incomeDate
+      );
 
       const payload = {
         ...form,
         amount: parseFloat(form.amount),
+        incomeDate: form.incomeDate,
         transactionDateTime,
-        createdAt: existingIncome?.createdAt || transactionDateTime
+        createdAt: updateTransactionDateTime(existingIncome?.createdAt, form.incomeDate) || transactionDateTime
       };
       if (editId) { await api.put(`/api/incomes/${editId}`, payload); toast.success('Income updated'); }
       else { await api.post('/api/incomes', payload); toast.success('Income added'); }
-      setDialogOpen(false); fetchIncomes();
+      setDialogOpen(false);
+      await Promise.all([fetchAccounts(), fetchIncomes()]);
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to save'); }
     finally { setSubmitting(false); }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this income? The amount will be deducted from the account.')) return;
-    try { await api.delete(`/api/incomes/${id}`); toast.success('Income deleted'); fetchIncomes(); }
-    catch { toast.error('Failed to delete'); }
+    try {
+      await api.delete(`/api/incomes/${id}`);
+      toast.success('Income deleted');
+      await Promise.all([fetchAccounts(), fetchIncomes()]);
+    } catch { toast.error('Failed to delete'); }
   };
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', pt: 10 }}><CircularProgress /></Box>;

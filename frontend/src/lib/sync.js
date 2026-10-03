@@ -71,6 +71,7 @@ export async function sync() {
       store.lastSync = new Date().toISOString();
       saveStoredData(store);
       console.info('[Sync Engine] Background sync completed successfully.');
+      window.dispatchEvent(new CustomEvent('sync-completed'));
     }
   } catch (err) {
     console.error('[Sync Engine] Background sync failed:', err);

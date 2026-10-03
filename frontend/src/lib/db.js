@@ -1,6 +1,7 @@
 import { Preferences } from '@capacitor/preferences';
 import {
   createTransactionDateTime,
+  updateTransactionDateTime,
   sortTransactions,
   aggregateCategoriesForChart,
   isDefaultCategory
@@ -107,7 +108,13 @@ export function saveStoredData(obj) {
 // User Profile Helpers
 export async function getLocalProfile() {
   const store = getStoredData();
-  return store.data.profile || null;
+  if (!store.data.profile) return null;
+  const uid = store.localUserId || store.data.profile.userId || store.data.profile.id;
+  return {
+    ...store.data.profile,
+    userId: uid,
+    id: uid
+  };
 }
 
 export async function saveLocalProfile(profileData, isSynced = false) {
@@ -260,28 +267,40 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
   const expenses = store.data.expenses || [];
   const index = expenses.findIndex(e => e.id === id);
 
-  let accountName = expenseData.accountName || '';
-  if (!accountName && expenseData.accountId) {
+  let accountName = '';
+  if (expenseData.accountId) {
     const acc = (store.data.accounts || []).find(a => a.id === expenseData.accountId);
     if (acc) {
       accountName = acc.accountName;
     }
   }
 
-  const transactionDateTime = expenseData.transactionDateTime || createTransactionDateTime(expenseData.expenseDate);
+  const existingExp = index !== -1 ? expenses[index] : null;
+  const transactionDateTime = updateTransactionDateTime(
+    expenseData.transactionDateTime || existingExp?.transactionDateTime || existingExp?.createdAt,
+    expenseData.expenseDate
+  );
+  const createdAt = updateTransactionDateTime(
+    expenseData.createdAt || existingExp?.createdAt,
+    expenseData.expenseDate
+  ) || transactionDateTime;
+
   const updatedData = {
     ...expenseData,
     id,
     accountName,
     amount: parseFloat(expenseData.amount || 0),
+    expenseDate: expenseData.expenseDate,
     transactionDateTime,
-    createdAt: expenseData.createdAt || transactionDateTime
+    createdAt
   };
 
   const isNew = index === -1;
   let oldAmount = 0;
+  let oldAccountId = null;
   if (!isNew) {
     oldAmount = parseFloat(expenses[index].amount || 0);
+    oldAccountId = expenses[index].accountId;
     expenses[index] = {
       ...expenses[index],
       ...updatedData,
@@ -295,15 +314,36 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
   }
 
   store.data.expenses = expenses;
-  saveStoredData(store);
 
-  // Adjust account balance
+  // Adjust account balances atomically in store
+  const accounts = store.data.accounts || [];
   if (isNew) {
-    await adjustLocalAccountBalance(expenseData.accountId, -updatedData.amount);
+    const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
+    if (accIdx !== -1) {
+      accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) - updatedData.amount;
+    }
   } else {
-    const diff = updatedData.amount - oldAmount;
-    await adjustLocalAccountBalance(expenseData.accountId, -diff);
+    if (oldAccountId && oldAccountId !== updatedData.accountId) {
+      // Account changed: refund the old account, debit the new account
+      const oldAccIdx = accounts.findIndex(a => a.id === oldAccountId);
+      if (oldAccIdx !== -1) {
+        accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) + oldAmount;
+      }
+      const newAccIdx = accounts.findIndex(a => a.id === updatedData.accountId);
+      if (newAccIdx !== -1) {
+        accounts[newAccIdx].currentBalance = parseFloat(accounts[newAccIdx].currentBalance || 0) - updatedData.amount;
+      }
+    } else {
+      // Same account: apply difference
+      const diff = updatedData.amount - oldAmount;
+      const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
+      if (accIdx !== -1) {
+        accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) - diff;
+      }
+    }
   }
+  store.data.accounts = accounts;
+  saveStoredData(store);
 
   return updatedData;
 }
@@ -367,28 +407,40 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
   const incomes = store.data.incomes || [];
   const index = incomes.findIndex(i => i.id === id);
 
-  let accountName = incomeData.accountName || '';
-  if (!accountName && incomeData.accountId) {
+  let accountName = '';
+  if (incomeData.accountId) {
     const acc = (store.data.accounts || []).find(a => a.id === incomeData.accountId);
     if (acc) {
       accountName = acc.accountName;
     }
   }
 
-  const transactionDateTime = incomeData.transactionDateTime || createTransactionDateTime(incomeData.incomeDate);
+  const existingInc = index !== -1 ? incomes[index] : null;
+  const transactionDateTime = updateTransactionDateTime(
+    incomeData.transactionDateTime || existingInc?.transactionDateTime || existingInc?.createdAt,
+    incomeData.incomeDate
+  );
+  const createdAt = updateTransactionDateTime(
+    incomeData.createdAt || existingInc?.createdAt,
+    incomeData.incomeDate
+  ) || transactionDateTime;
+
   const updatedData = {
     ...incomeData,
     id,
     accountName,
     amount: parseFloat(incomeData.amount || 0),
+    incomeDate: incomeData.incomeDate,
     transactionDateTime,
-    createdAt: incomeData.createdAt || transactionDateTime
+    createdAt
   };
 
   const isNew = index === -1;
   let oldAmount = 0;
+  let oldAccountId = null;
   if (!isNew) {
     oldAmount = parseFloat(incomes[index].amount || 0);
+    oldAccountId = incomes[index].accountId;
     incomes[index] = {
       ...incomes[index],
       ...updatedData,
@@ -402,15 +454,36 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
   }
 
   store.data.incomes = incomes;
-  saveStoredData(store);
 
-  // Adjust account balance
+  // Adjust account balances atomically in store
+  const accounts = store.data.accounts || [];
   if (isNew) {
-    await adjustLocalAccountBalance(incomeData.accountId, updatedData.amount);
+    const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
+    if (accIdx !== -1) {
+      accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) + updatedData.amount;
+    }
   } else {
-    const diff = updatedData.amount - oldAmount;
-    await adjustLocalAccountBalance(incomeData.accountId, diff);
+    if (oldAccountId && oldAccountId !== updatedData.accountId) {
+      // Account changed: deduct old amount from old account, credit new amount to new account
+      const oldAccIdx = accounts.findIndex(a => a.id === oldAccountId);
+      if (oldAccIdx !== -1) {
+        accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) - oldAmount;
+      }
+      const newAccIdx = accounts.findIndex(a => a.id === updatedData.accountId);
+      if (newAccIdx !== -1) {
+        accounts[newAccIdx].currentBalance = parseFloat(accounts[newAccIdx].currentBalance || 0) + updatedData.amount;
+      }
+    } else {
+      // Same account: apply difference
+      const diff = updatedData.amount - oldAmount;
+      const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
+      if (accIdx !== -1) {
+        accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) + diff;
+      }
+    }
   }
+  store.data.accounts = accounts;
+  saveStoredData(store);
 
   return updatedData;
 }

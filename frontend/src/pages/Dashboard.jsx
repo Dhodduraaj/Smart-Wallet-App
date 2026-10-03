@@ -838,7 +838,7 @@ const Dashboard = () => {
           })()}
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 1.5 }}>
-          <Button variant="outlined" onClick={() => setOthersDialogOpen(false)}>Close</Button>
+          <Button variant="contained" onClick={() => setOthersDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

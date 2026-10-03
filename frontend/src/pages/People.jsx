@@ -676,22 +676,32 @@ const People = () => {
                           <Divider sx={{ my: 1, borderColor: isDark ? 'rgba(37, 99, 235, 0.3)' : 'rgba(29, 78, 216, 0.3)' }} />
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Box>
+                              <Typography variant="caption" color="text.secondary">Total</Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
+                                ₹{rowTotal.toFixed(2)}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ textAlign: 'right' }}>
                               {inc > 0 && (
-                                <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600, fontSize: '0.8rem' }}>
-                                  Incoming: +₹{inc.toFixed(2)}
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                  <Box component="span" sx={{ color: 'success.main' }}>
+                                    Incoming:{' '}
+                                  </Box>
+                                  <Box component="span" sx={{ color: 'text.primary' }}>
+                                    +₹{inc.toFixed(2)}
+                                  </Box>
                                 </Typography>
                               )}
                               {out > 0 && (
-                                <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 600, fontSize: '0.8rem' }}>
-                                  Outgoing: -₹{out.toFixed(2)}
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                                  <Box component="span" sx={{ color: 'error.main' }}>
+                                    Outgoing:{' '}
+                                  </Box>
+                                  <Box component="span" sx={{ color: 'text.primary' }}>
+                                    -₹{out.toFixed(2)}
+                                  </Box>
                                 </Typography>
                               )}
-                            </Box>
-                            <Box sx={{ textAlign: 'right' }}>
-                              <Typography variant="caption" color="text.secondary">Total</Typography>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                                ₹{rowTotal.toFixed(2)}
-                              </Typography>
                             </Box>
                           </Box>
                         </Card>
