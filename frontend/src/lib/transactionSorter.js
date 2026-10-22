@@ -48,80 +48,159 @@ export function getCustomExpenseCategories(expenses) {
 }
 
 /**
- * Creates a reliable machine-readable ISO datetime string using the device's
- * current local date and time, optionally preserving a user-chosen date.
+ * Timezone-safe date/time parser:
+ * Parses ISO strings, Date instances, timestamps, or date-only strings (YYYY-MM-DD).
+ * For date-only strings, constructs local Date at midnight to avoid UTC negative-offset rollover.
  *
- * @param {string} [selectedDate] - Optional date in YYYY-MM-DD format
- * @returns {string} ISO 8601 string representing device date + time
+ * @param {string|Date|number} value
+ * @returns {Date|null} Valid Date object or null
  */
-export function createTransactionDateTime(selectedDate) {
-  const now = new Date();
-  if (!selectedDate) {
-    return now.toISOString();
+export function parseDateTime(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
   }
-
-  // Format today's local date as YYYY-MM-DD
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const todayStr = `${year}-${month}-${day}`;
-
-  if (selectedDate === todayStr) {
-    return now.toISOString();
-  }
-
-  // User picked a different date; attach current device hours, minutes, seconds
-  const parts = selectedDate.split('-');
-  if (parts.length === 3) {
-    const y = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10) - 1;
-    const d = parseInt(parts[2], 10);
-    const combined = new Date(y, m, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-    if (!isNaN(combined.getTime())) {
-      return combined.toISOString();
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    // YYYY-MM-DD date-only string: construct local Date at midnight
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map(n => parseInt(n, 10));
+      const localDate = new Date(y, m - 1, d, 0, 0, 0, 0);
+      return isNaN(localDate.getTime()) ? null : localDate;
     }
+    const d = new Date(trimmed);
+    return isNaN(d.getTime()) ? null : d;
   }
-
-  return now.toISOString();
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /**
- * Updates a transaction's datetime string with a new selected date (YYYY-MM-DD),
- * preserving original time-of-day if available, or attaching current device time.
+ * Extracts formatted local date (YYYY-MM-DD) and local time (HH:mm) from a datetime value.
  *
- * @param {string|Date} [existingDateTime] - Optional existing timestamp
- * @param {string} [newSelectedDate] - New date in YYYY-MM-DD format
- * @returns {string} ISO 8601 string with the new date and preserved/current time
+ * @param {string|Date|number} [dateTimeValue]
+ * @returns {{ dateStr: string, timeStr: string }}
  */
-export function updateTransactionDateTime(existingDateTime, newSelectedDate) {
-  if (!newSelectedDate) {
-    return existingDateTime || createTransactionDateTime();
+export function getLocalDateAndTimeString(dateTimeValue) {
+  const d = parseDateTime(dateTimeValue) || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+
+  return {
+    dateStr: `${year}-${month}-${day}`,
+    timeStr: `${hours}:${minutes}`
+  };
+}
+
+/**
+ * Combines a local date string (YYYY-MM-DD) and a local time string (HH:mm or HH:mm:ss)
+ * into a canonical ISO 8601 string representing that exact instant in the device's local timezone.
+ *
+ * Preserves seconds and milliseconds from originalIsoString if available and minute was not altered.
+ *
+ * @param {string} dateStr - Date in YYYY-MM-DD format
+ * @param {string} [timeStr] - Time in HH:mm or HH:mm:ss format
+ * @param {string|Date} [originalIsoString] - Optional original timestamp to preserve seconds/ms
+ * @returns {string} Canonical ISO 8601 string
+ */
+export function combineDateAndTime(dateStr, timeStr, originalIsoString) {
+  const now = new Date();
+  let y = now.getFullYear();
+  let m = now.getMonth();
+  let d = now.getDate();
+
+  if (dateStr && typeof dateStr === 'string') {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      y = parseInt(parts[0], 10);
+      m = parseInt(parts[1], 10) - 1;
+      d = parseInt(parts[2], 10);
+    }
   }
 
-  const parts = String(newSelectedDate).split('-');
-  if (parts.length === 3) {
-    const y = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10) - 1;
-    const d = parseInt(parts[2], 10);
+  let hh = now.getHours();
+  let mm = now.getMinutes();
+  let ss = now.getSeconds();
+  let ms = now.getMilliseconds();
 
-    if (existingDateTime) {
-      const prev = new Date(existingDateTime);
-      if (!isNaN(prev.getTime())) {
-        const combined = new Date(y, m, d, prev.getHours(), prev.getMinutes(), prev.getSeconds(), prev.getMilliseconds());
-        if (!isNaN(combined.getTime())) {
-          return combined.toISOString();
+  if (timeStr && typeof timeStr === 'string') {
+    const timeParts = timeStr.split(':');
+    if (timeParts.length >= 2) {
+      hh = parseInt(timeParts[0], 10) || 0;
+      mm = parseInt(timeParts[1], 10) || 0;
+      if (timeParts.length >= 3) {
+        ss = parseInt(timeParts[2], 10) || 0;
+        ms = 0;
+      } else {
+        // UI provided minute precision (HH:mm); check if original had matching hour & minute
+        let preserved = false;
+        if (originalIsoString) {
+          const orig = parseDateTime(originalIsoString);
+          if (orig && orig.getHours() === hh && orig.getMinutes() === mm) {
+            ss = orig.getSeconds();
+            ms = orig.getMilliseconds();
+            preserved = true;
+          }
+        }
+        if (!preserved) {
+          ss = 0;
+          ms = 0;
         }
       }
     }
-
-    const now = new Date();
-    const combined = new Date(y, m, d, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-    if (!isNaN(combined.getTime())) {
-      return combined.toISOString();
+  } else if (originalIsoString) {
+    const orig = parseDateTime(originalIsoString);
+    if (orig) {
+      hh = orig.getHours();
+      mm = orig.getMinutes();
+      ss = orig.getSeconds();
+      ms = orig.getMilliseconds();
     }
   }
 
-  return createTransactionDateTime(newSelectedDate);
+  const combined = new Date(y, m, d, hh, mm, ss, ms);
+  return !isNaN(combined.getTime()) ? combined.toISOString() : now.toISOString();
+}
+
+/**
+ * Creates a reliable machine-readable ISO datetime string using the device's
+ * current local date and time, optionally combining user-chosen date and time.
+ *
+ * @param {string} [selectedDate] - Optional date in YYYY-MM-DD format
+ * @param {string} [selectedTime] - Optional time in HH:mm format
+ * @returns {string} ISO 8601 string representing device date + time
+ */
+export function createTransactionDateTime(selectedDate, selectedTime) {
+  if (selectedDate && selectedTime) {
+    return combineDateAndTime(selectedDate, selectedTime);
+  }
+  if (selectedDate) {
+    return combineDateAndTime(selectedDate, null);
+  }
+  return new Date().toISOString();
+}
+
+/**
+ * Updates a transaction's datetime string with a new selected date (YYYY-MM-DD)
+ * and optional time (HH:mm), preserving original time-of-day if available.
+ *
+ * @param {string|Date} [existingDateTime] - Optional existing timestamp
+ * @param {string} [newSelectedDate] - New date in YYYY-MM-DD format
+ * @param {string} [newSelectedTime] - Optional new time in HH:mm format
+ * @returns {string} ISO 8601 string with the new date and preserved/current time
+ */
+export function updateTransactionDateTime(existingDateTime, newSelectedDate, newSelectedTime) {
+  if (newSelectedDate && newSelectedTime) {
+    return combineDateAndTime(newSelectedDate, newSelectedTime, existingDateTime);
+  }
+  if (newSelectedDate) {
+    return combineDateAndTime(newSelectedDate, null, existingDateTime);
+  }
+  return existingDateTime || createTransactionDateTime();
 }
 
 /**
@@ -140,8 +219,8 @@ export function formatTransactionDateTime(dateTimeValue) {
     return { dateStr: '—', timeStr: '—', fullStr: '—' };
   }
 
-  const d = new Date(dateTimeValue);
-  if (isNaN(d.getTime())) {
+  const d = parseDateTime(dateTimeValue);
+  if (!d) {
     return { dateStr: String(dateTimeValue), timeStr: '', fullStr: String(dateTimeValue) };
   }
 
@@ -171,8 +250,11 @@ export function formatTransactionDateTime(dateTimeValue) {
  * Secondary fallback: unique transaction ID DESC (prevents random tie-breaking)
  */
 export function compareTransactions(a, b) {
-  const timeA = new Date(a.transactionDateTime || a.createdAt || a.expenseDate || a.incomeDate || 0).getTime();
-  const timeB = new Date(b.transactionDateTime || b.createdAt || b.expenseDate || b.incomeDate || 0).getTime();
+  const dateA = parseDateTime(a.transactionDateTime || a.createdAt || a.expenseDate || a.incomeDate || 0);
+  const dateB = parseDateTime(b.transactionDateTime || b.createdAt || b.expenseDate || b.incomeDate || 0);
+
+  const timeA = dateA ? dateA.getTime() : 0;
+  const timeB = dateB ? dateB.getTime() : 0;
 
   if (timeB !== timeA) {
     return timeB - timeA;

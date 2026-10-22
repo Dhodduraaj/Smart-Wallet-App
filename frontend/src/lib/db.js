@@ -276,21 +276,19 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
   }
 
   const existingExp = index !== -1 ? expenses[index] : null;
-  const transactionDateTime = updateTransactionDateTime(
-    expenseData.transactionDateTime || existingExp?.transactionDateTime || existingExp?.createdAt,
-    expenseData.expenseDate
+  const transactionDateTime = expenseData.transactionDateTime || updateTransactionDateTime(
+    existingExp?.transactionDateTime || existingExp?.createdAt,
+    expenseData.expenseDate,
+    expenseData.expenseTime
   );
-  const createdAt = updateTransactionDateTime(
-    expenseData.createdAt || existingExp?.createdAt,
-    expenseData.expenseDate
-  ) || transactionDateTime;
+  const createdAt = expenseData.createdAt || existingExp?.createdAt || transactionDateTime;
 
   const updatedData = {
     ...expenseData,
     id,
     accountName,
     amount: parseFloat(expenseData.amount || 0),
-    expenseDate: expenseData.expenseDate,
+    expenseDate: expenseData.expenseDate || (transactionDateTime ? transactionDateTime.split('T')[0] : getLocalDateString()),
     transactionDateTime,
     createdAt
   };

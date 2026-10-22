@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import api from '../lib/api';
 import {
   formatTransactionDateTime,
-  createTransactionDateTime
+  createTransactionDateTime,
+  getLocalDateAndTimeString,
+  combineDateAndTime
 } from '../lib/transactionSorter';
 import {
   Grid,
@@ -207,7 +209,18 @@ const Dashboard = () => {
   const openExpenseDialog = async () => {
     try {
       const accs = await loadAccountsIfNeeded();
-      setExpenseForm({ ...expenseForm, accountId: accs.length > 0 ? accs[0].id : '' });
+      const now = new Date();
+      const { dateStr, timeStr } = getLocalDateAndTimeString(now);
+      setExpenseForm({
+        accountId: accs.length > 0 ? accs[0].id : '',
+        description: '',
+        amount: '',
+        category: 'Food',
+        expenseDate: dateStr,
+        expenseTime: timeStr,
+        notes: '',
+        initialTimestamp: now.toISOString()
+      });
       setCustomCategory('');
       setExpenseDialogOpen(true);
     } catch {
@@ -242,7 +255,7 @@ const Dashboard = () => {
   };
 
   const handleSaveExpense = async () => {
-    if (!expenseForm.description || !expenseForm.amount || !expenseForm.accountId) {
+    if (!expenseForm.description || !expenseForm.amount || !expenseForm.accountId || !expenseForm.expenseDate || !expenseForm.expenseTime) {
       toast.error('Fill required fields');
       return;
     }
@@ -253,11 +266,17 @@ const Dashboard = () => {
     setExpenseSubmitting(true);
     try {
       const categoryToSave = expenseForm.category === 'Others' ? customCategory.trim() : expenseForm.category;
-      const transactionDateTime = createTransactionDateTime(expenseForm.expenseDate);
+      const transactionDateTime = combineDateAndTime(
+        expenseForm.expenseDate,
+        expenseForm.expenseTime,
+        expenseForm.initialTimestamp
+      );
       const payload = {
         ...expenseForm,
         category: categoryToSave,
         amount: parseFloat(expenseForm.amount),
+        expenseDate: expenseForm.expenseDate,
+        expenseTime: expenseForm.expenseTime,
         transactionDateTime,
         paymentMode: 'Cash',
         createdAt: transactionDateTime
@@ -266,7 +285,7 @@ const Dashboard = () => {
       toast.success('Expense added');
       setExpenseDialogOpen(false);
       await refreshDashboard();
-      setExpenseForm({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: getLocalDateString(), notes: '' });
+      setExpenseForm({ accountId: '', description: '', amount: '', category: 'Food', expenseDate: '', expenseTime: '', notes: '' });
       setCustomCategory('');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save expense');
@@ -716,18 +735,16 @@ const Dashboard = () => {
             required
             fullWidth
           />
+          <TextField
+            label="Amount (₹)"
+            type="number"
+            value={expenseForm.amount}
+            onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+            required
+            fullWidth
+          />
           <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <TextField
-                label="Amount (₹)"
-                type="number"
-                value={expenseForm.amount}
-                onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
-                required
-                fullWidth
-              />
-            </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={12} sm={6}>
               <TextField
                 label="Date"
                 type="date"
@@ -736,6 +753,18 @@ const Dashboard = () => {
                 required
                 fullWidth
                 InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Time"
+                type="time"
+                value={expenseForm.expenseTime}
+                onChange={(e) => setExpenseForm({ ...expenseForm, expenseTime: e.target.value })}
+                required
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                inputProps={{ step: 60 }}
               />
             </Grid>
           </Grid>

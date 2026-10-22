@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import api from '../lib/api';
 import {
   formatTransactionDateTime,
-  createTransactionDateTime,
-  updateTransactionDateTime
+  getLocalDateAndTimeString,
+  combineDateAndTime
 } from '../lib/transactionSorter';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
@@ -32,7 +32,16 @@ const getLocalDateString = (d = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-const emptyForm = { accountId: '', description: '', amount: '', category: 'Food', expenseDate: getLocalDateString(), notes: '' };
+const emptyForm = {
+  accountId: '',
+  description: '',
+  amount: '',
+  category: 'Food',
+  expenseDate: '',
+  expenseTime: '',
+  notes: '',
+  initialTimestamp: null
+};
 
 const Expenses = () => {
   const isAndroidApk = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
@@ -123,37 +132,60 @@ const Expenses = () => {
   const openCreate = () => {
     fetchAccounts().catch(() => {});
     setEditId(null);
-    setForm({ ...emptyForm, accountId: accounts.length > 0 ? accounts[0].id : '' });
+    const now = new Date();
+    const { dateStr, timeStr } = getLocalDateAndTimeString(now);
+    setForm({
+      accountId: accounts.length > 0 ? accounts[0].id : '',
+      description: '',
+      amount: '',
+      category: 'Food',
+      expenseDate: dateStr,
+      expenseTime: timeStr,
+      notes: '',
+      initialTimestamp: now.toISOString()
+    });
     setCustomCategory('');
     setDialogOpen(true);
   };
+
   const openEdit = (exp) => {
     fetchAccounts().catch(() => {});
     setEditId(exp.id);
     const category = exp.category;
-    const initialDate = exp.expenseDate || (exp.transactionDateTime ? exp.transactionDateTime.split('T')[0] : '') || (exp.createdAt ? exp.createdAt.split('T')[0] : '') || getLocalDateString();
+    const initialDt = exp.transactionDateTime || exp.createdAt || exp.expenseDate;
+    const { dateStr, timeStr } = getLocalDateAndTimeString(initialDt);
     setForm({
       accountId: exp.accountId,
       description: exp.description,
       amount: String(exp.amount),
       category: category,
-      expenseDate: initialDate,
-      notes: exp.notes || ''
+      expenseDate: dateStr,
+      expenseTime: timeStr,
+      notes: exp.notes || '',
+      initialTimestamp: exp.transactionDateTime || exp.createdAt || null
     });
     setCustomCategory(category === 'Others' ? '' : category);
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
-    if (!form.description || !form.amount || !form.accountId) { toast.error('Fill required fields'); return; }
-    if (form.category === 'Others' && !customCategory.trim()) { toast.error('Please specify custom category name'); return; }
+    if (!form.description || !form.amount || !form.accountId || !form.expenseDate || !form.expenseTime) {
+      toast.error('Fill required fields');
+      return;
+    }
+    if (form.category === 'Others' && !customCategory.trim()) {
+      toast.error('Please specify custom category name');
+      return;
+    }
     setSubmitting(true);
     try {
       const categoryToSave = form.category === 'Others' ? customCategory.trim() : form.category;
       const existingExpense = editId ? expenses.find(e => e.id === editId) : null;
-      const transactionDateTime = updateTransactionDateTime(
-        existingExpense?.transactionDateTime || existingExpense?.createdAt,
-        form.expenseDate
+      
+      const transactionDateTime = combineDateAndTime(
+        form.expenseDate,
+        form.expenseTime,
+        form.initialTimestamp || existingExpense?.transactionDateTime || existingExpense?.createdAt
       );
 
       const payload = {
@@ -161,16 +193,25 @@ const Expenses = () => {
         category: categoryToSave,
         amount: parseFloat(form.amount),
         expenseDate: form.expenseDate,
+        expenseTime: form.expenseTime,
         transactionDateTime,
         paymentMode: existingExpense?.paymentMode || 'Cash',
-        createdAt: updateTransactionDateTime(existingExpense?.createdAt, form.expenseDate) || transactionDateTime
+        createdAt: existingExpense?.createdAt || transactionDateTime
       };
-      if (editId) { await api.put(`/api/expenses/${editId}`, payload); toast.success('Expense updated'); }
-      else { await api.post('/api/expenses', payload); toast.success('Expense added'); }
+      if (editId) {
+        await api.put(`/api/expenses/${editId}`, payload);
+        toast.success('Expense updated');
+      } else {
+        await api.post('/api/expenses', payload);
+        toast.success('Expense added');
+      }
       setDialogOpen(false);
       await Promise.all([fetchAccounts(), fetchExpenses()]);
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to save expense'); }
-    finally { setSubmitting(false); }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to save expense');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -348,12 +389,30 @@ const Expenses = () => {
             {accounts.map(a => <MenuItem key={a.id} value={a.id}>{a.accountName} (₹{parseFloat(a.currentBalance).toFixed(2)})</MenuItem>)}
           </TextField>
           <TextField label="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required fullWidth />
+          <TextField label="Amount (₹)" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required fullWidth />
           <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <TextField label="Amount (₹)" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required fullWidth />
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Date"
+                type="date"
+                value={form.expenseDate}
+                onChange={(e) => setForm({ ...form, expenseDate: e.target.value })}
+                required
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
             </Grid>
-            <Grid item xs={6}>
-              <TextField label="Date" type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} required fullWidth InputLabelProps={{ shrink: true }} />
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Time"
+                type="time"
+                value={form.expenseTime}
+                onChange={(e) => setForm({ ...form, expenseTime: e.target.value })}
+                required
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                inputProps={{ step: 60 }}
+              />
             </Grid>
           </Grid>
           <TextField select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} fullWidth>
