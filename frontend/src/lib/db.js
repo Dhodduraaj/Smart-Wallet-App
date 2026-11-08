@@ -1009,3 +1009,17 @@ export async function deleteLocalPersonLedgerEntry(id) {
   saveStoredData(store);
 }
 
+export async function deleteAllLocalPersonLedgerEntries(personId) {
+  const store = getStoredData();
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => e.personId !== personId);
+  saveStoredData(store);
+}
+
+export async function deleteSelectedLocalPersonLedgerEntries(personId, entryIds) {
+  const store = getStoredData();
+  const idSet = new Set(Array.isArray(entryIds) ? entryIds : [entryIds]);
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => !(e.personId === personId && idSet.has(e.id)));
+  saveStoredData(store);
+}
+
+

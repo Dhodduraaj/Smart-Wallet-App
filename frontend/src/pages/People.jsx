@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import {
   formatTransactionDateTime,
@@ -8,7 +8,7 @@ import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Chip, CircularProgress, Grid,
-  InputAdornment, useMediaQuery, useTheme, Avatar, Divider, Alert
+  InputAdornment, useMediaQuery, useTheme, Avatar, Divider, Alert, Checkbox
 } from '@mui/material';
 import {
   AddOutlined, DeleteOutlineOutlined, SearchOutlined,
@@ -115,6 +115,24 @@ const People = () => {
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
+  // Multi-selection state
+  const [selectedEntryIds, setSelectedEntryIds] = useState([]);
+  const [deleteSelectedDialogOpen, setDeleteSelectedDialogOpen] = useState(false);
+  const [deletingSelected, setDeletingSelected] = useState(false);
+
+  // Delete All dialog state
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  // Touch handling ref for mobile long-press
+  const touchRef = useRef({
+    startX: 0,
+    startY: 0,
+    timer: null,
+    longPressed: false,
+    justLongPressed: false,
+  });
+
   // Load people list
   const fetchPeople = async () => {
     try {
@@ -130,6 +148,7 @@ const People = () => {
   // Load selected person's ledger entries
   const fetchLedger = async (personId) => {
     setLedgerLoading(true);
+    setSelectedEntryIds([]);
     try {
       const res = await api.get(`/api/people/${personId}/ledger`);
       setLedgerEntries(res.data || []);
@@ -248,12 +267,139 @@ const People = () => {
     }
   };
 
+  // Multi-selection helpers
+  const isSelectionMode = selectedEntryIds.length > 0;
+
+  const toggleSelectEntry = (id) => {
+    setSelectedEntryIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const clearSelection = () => {
+    setSelectedEntryIds([]);
+  };
+
+  const selectAllEntries = () => {
+    setSelectedEntryIds(ledgerEntries.map((e) => e.id));
+  };
+
+  // Touch handlers for mobile long-press multi-selection
+  const handleTouchStart = (entryId, e) => {
+    if (editingRowId === entryId) return;
+    const touch = e.touches[0];
+    touchRef.current.startX = touch.clientX;
+    touchRef.current.startY = touch.clientY;
+    touchRef.current.longPressed = false;
+
+    if (touchRef.current.timer) {
+      clearTimeout(touchRef.current.timer);
+    }
+
+    touchRef.current.timer = setTimeout(() => {
+      touchRef.current.longPressed = true;
+      touchRef.current.justLongPressed = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(50); } catch { /* ignore */ }
+      }
+      toggleSelectEntry(entryId);
+      setTimeout(() => {
+        touchRef.current.justLongPressed = false;
+      }, 400);
+    }, 450);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchRef.current.timer) return;
+    const touch = e.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchRef.current.startX);
+    const deltaY = Math.abs(touch.clientY - touchRef.current.startY);
+    // Cancel long press if user is scrolling (moved more than 8px)
+    if (deltaX > 8 || deltaY > 8) {
+      clearTimeout(touchRef.current.timer);
+      touchRef.current.timer = null;
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchRef.current.timer) {
+      clearTimeout(touchRef.current.timer);
+      touchRef.current.timer = null;
+    }
+    if (touchRef.current.longPressed) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+      touchRef.current.longPressed = false;
+    }
+  };
+
+  const handleTouchCancel = () => {
+    if (touchRef.current.timer) {
+      clearTimeout(touchRef.current.timer);
+      touchRef.current.timer = null;
+    }
+    touchRef.current.longPressed = false;
+  };
+
+  const handleClickEntry = (entryId) => {
+    if (touchRef.current.justLongPressed) return;
+    if (selectedEntryIds.length > 0) {
+      toggleSelectEntry(entryId);
+    }
+  };
+
+  const handleContextMenu = (entryId, e) => {
+    e.preventDefault();
+    if (editingRowId === entryId) return;
+    toggleSelectEntry(entryId);
+  };
+
+  // Handle Delete All Ledger Entries
+  const handleDeleteAllEntries = async () => {
+    if (!selectedPerson) return;
+    setDeletingAll(true);
+    try {
+      await api.delete(`/api/people/${selectedPerson.id}/ledger`);
+      toast.success('All ledger entries deleted');
+      clearSelection();
+      setDeleteAllDialogOpen(false);
+      await fetchLedger(selectedPerson.id);
+      fetchPeople();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete all entries');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
+  // Handle Delete Selected Ledger Entries
+  const handleDeleteSelectedEntries = async () => {
+    if (!selectedPerson || selectedEntryIds.length === 0) return;
+    setDeletingSelected(true);
+    try {
+      await api.post(`/api/people/${selectedPerson.id}/ledger/bulk-delete`, {
+        entryIds: selectedEntryIds
+      });
+      toast.success(`Deleted ${selectedEntryIds.length} ${selectedEntryIds.length === 1 ? 'entry' : 'entries'}`);
+      clearSelection();
+      setDeleteSelectedDialogOpen(false);
+      await fetchLedger(selectedPerson.id);
+      fetchPeople();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete selected entries');
+    } finally {
+      setDeletingSelected(false);
+    }
+  };
+
   // Handle Delete Ledger Entry
   const handleDeleteEntry = async (entryId) => {
     if (!window.confirm('Delete this ledger record?')) return;
     try {
       await api.delete(`/api/people/ledger/${entryId}`);
       toast.success('Record deleted');
+      setSelectedEntryIds((prev) => prev.filter((id) => id !== entryId));
       await fetchLedger(selectedPerson.id);
       fetchPeople();
     } catch {
@@ -263,6 +409,7 @@ const People = () => {
 
   // Start Inline Editing for a specific row
   const handleStartEditRow = (entry) => {
+    setSelectedEntryIds((prev) => prev.filter((id) => id !== entry.id));
     const rawDate = entry.date || entry.createdAt;
     const dateObj = new Date(rawDate);
     const dateStr = !isNaN(dateObj.getTime()) ? getLocalDateString(dateObj) : getLocalDateString();
@@ -471,7 +618,17 @@ const People = () => {
               </Typography>
             </Box>
           </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<DeleteOutlineOutlined />}
+              onClick={() => setDeleteAllDialogOpen(true)}
+              disabled={ledgerEntries.length === 0}
+              sx={{ borderRadius: 1.5, px: 2, py: 0.75, fontSize: { xs: '0.75rem', sm: '0.85rem' } }}
+            >
+              Delete All
+            </Button>
             <Button
               variant="contained"
               startIcon={<AddOutlined />}
@@ -556,13 +713,67 @@ const People = () => {
           {/* Row 2: Ledger Section (Connected directly to Summary row below with dark bright blue border, eliminating empty gaps) */}
           <Box sx={{ ...gridRowSx, gridTemplateColumns: '1fr', flex: 1 }}>
             <Card sx={{ ...sectionCardSx, border: '1px solid', borderColor: sectionBorderColor, borderTop: 'none', display: 'flex', flexDirection: 'column' }}>
-              <Box sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: '1px solid', borderColor: sectionBorderColor, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                  Personal Ledger Records
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {ledgerEntries.length} {ledgerEntries.length === 1 ? 'entry' : 'entries'}
-                </Typography>
+              <Box
+                sx={{
+                  p: { xs: 1.5, sm: 2 },
+                  borderBottom: '1px solid',
+                  borderColor: sectionBorderColor,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 5,
+                  bgcolor: isSelectionMode
+                    ? (isDark ? '#1e293b' : '#eff6ff')
+                    : 'background.paper',
+                  transition: 'background-color 0.2s',
+                  flexWrap: 'wrap',
+                  gap: 1.5,
+                }}
+              >
+                {isSelectionMode ? (
+                  <>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <IconButton size="small" onClick={clearSelection} title="Cancel selection">
+                        <CloseOutlined fontSize="small" />
+                      </IconButton>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, fontSize: '0.95rem', color: isDark ? '#93c5fd' : '#1d4ed8' }}>
+                        {selectedEntryIds.length} selected
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        color="inherit"
+                        size="small"
+                        onClick={clearSelection}
+                        sx={{ borderRadius: 1.5, textTransform: 'none', fontSize: '0.8rem' }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="contained"
+                        color="error"
+                        size="small"
+                        startIcon={<DeleteOutlineOutlined />}
+                        onClick={() => setDeleteSelectedDialogOpen(true)}
+                        sx={{ borderRadius: 1.5, textTransform: 'none', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Delete Selected
+                      </Button>
+                    </Box>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                      Personal Ledger Records
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {ledgerEntries.length} {ledgerEntries.length === 1 ? 'entry' : 'entries'}
+                    </Typography>
+                  </>
+                )}
               </Box>
 
               {ledgerLoading ? (
@@ -581,6 +792,8 @@ const People = () => {
                       const out = parseFloat(entry.outgoingMoney || 0);
                       const rowTotal = parseFloat(entry.total || 0);
                       const isEditing = editingRowId === entry.id;
+
+                      const isSelected = selectedEntryIds.includes(entry.id);
 
                       if (isEditing) {
                         const prevTotal = getChronologicalPreviousTotal(entry.id);
@@ -654,21 +867,72 @@ const People = () => {
                       }
 
                       return (
-                        <Card key={entry.id} sx={{ borderRadius: 1, p: 1.5, border: '1px solid', borderColor: sectionBorderColor }}>
+                        <Card
+                          key={entry.id}
+                          onTouchStart={(e) => handleTouchStart(entry.id, e)}
+                          onTouchMove={handleTouchMove}
+                          onTouchEnd={handleTouchEnd}
+                          onTouchCancel={handleTouchCancel}
+                          onClick={() => handleClickEntry(entry.id)}
+                          onContextMenu={(e) => handleContextMenu(entry.id, e)}
+                          sx={{
+                            borderRadius: 1,
+                            p: 1.5,
+                            border: isSelected ? '2px solid' : '1px solid',
+                            borderColor: isSelected
+                              ? (isDark ? '#60a5fa' : '#2563eb')
+                              : sectionBorderColor,
+                            bgcolor: isSelected
+                              ? (isDark ? 'rgba(37, 99, 235, 0.22)' : 'rgba(219, 234, 254, 0.65)')
+                              : 'background.paper',
+                            cursor: isSelectionMode ? 'pointer' : 'default',
+                            transition: 'background-color 0.15s, border-color 0.15s',
+                            userSelect: 'none',
+                            WebkitUserSelect: 'none',
+                            WebkitTouchCallout: 'none',
+                          }}
+                        >
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">
-                                {dt.dateStr} • {dt.timeStr}
-                              </Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                                {entry.details || 'Record'}
-                              </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                              {isSelectionMode && (
+                                <Checkbox
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectEntry(entry.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  size="small"
+                                  sx={{ p: 0, mt: 0.25 }}
+                                />
+                              )}
+                              <Box>
+                                <Typography variant="caption" color="text.secondary">
+                                  {dt.dateStr} • {dt.timeStr}
+                                </Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                  {entry.details || 'Record'}
+                                </Typography>
+                              </Box>
                             </Box>
                             <Box sx={{ display: 'flex', gap: 0.5 }}>
-                              <IconButton size="small" color="primary" onClick={() => handleStartEditRow(entry)} title="Edit">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEditRow(entry);
+                                }}
+                                title="Edit"
+                              >
                                 <EditOutlined fontSize="small" />
                               </IconButton>
-                              <IconButton size="small" color="error" onClick={() => handleDeleteEntry(entry.id)} title="Delete">
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteEntry(entry.id);
+                                }}
+                                title="Delete"
+                              >
                                 <DeleteOutlineOutlined fontSize="small" />
                               </IconButton>
                             </Box>
@@ -711,13 +975,29 @@ const People = () => {
                 </Box>
               ) : (
                 // Desktop / Tablet Clean Table
-                // Required exact column order: Date | Details | Incoming | Outgoing | Total | Actions
+                // Required exact column order: Selection | Date | Details | Incoming | Outgoing | Total | Actions
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
                       <TableRow sx={{ bgcolor: 'action.hover', borderBottom: '1.5px solid', borderColor: sectionBorderColor }}>
-                        <TableCell sx={{ fontWeight: 700, width: '18%', py: 1.5, pl: 2, borderColor: sectionBorderColor }}>Date</TableCell>
-                        <TableCell sx={{ fontWeight: 700, width: '28%', py: 1.5, borderColor: sectionBorderColor }}>Details</TableCell>
+                        <TableCell padding="checkbox" sx={{ pl: 2, width: '48px', borderColor: sectionBorderColor }}>
+                          <Checkbox
+                            size="small"
+                            color="primary"
+                            indeterminate={selectedEntryIds.length > 0 && selectedEntryIds.length < ledgerEntries.length}
+                            checked={ledgerEntries.length > 0 && selectedEntryIds.length === ledgerEntries.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                selectAllEntries();
+                              } else {
+                                clearSelection();
+                              }
+                            }}
+                            inputProps={{ 'aria-label': 'Select all entries' }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 700, width: '16%', py: 1.5, borderColor: sectionBorderColor }}>Date</TableCell>
+                        <TableCell sx={{ fontWeight: 700, width: '26%', py: 1.5, borderColor: sectionBorderColor }}>Details</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5, borderColor: sectionBorderColor }}>Incoming</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5, borderColor: sectionBorderColor }}>Outgoing</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, width: '14%', py: 1.5, borderColor: sectionBorderColor }}>Total</TableCell>
@@ -727,7 +1007,7 @@ const People = () => {
                     <TableBody>
                       {ledgerEntries.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={6} align="center" sx={{ py: 6, borderColor: sectionBorderColor }}>
+                          <TableCell colSpan={7} align="center" sx={{ py: 6, borderColor: sectionBorderColor }}>
                             <Typography color="text.secondary">No entries recorded for {selectedPerson.name}</Typography>
                           </TableCell>
                         </TableRow>
@@ -738,6 +1018,7 @@ const People = () => {
                           const out = parseFloat(entry.outgoingMoney || 0);
                           const rowTotal = parseFloat(entry.total || 0);
                           const isEditing = editingRowId === entry.id;
+                          const isSelected = selectedEntryIds.includes(entry.id);
 
                           if (isEditing) {
                             const prevTotal = getChronologicalPreviousTotal(entry.id);
@@ -747,8 +1028,9 @@ const People = () => {
 
                             return (
                               <TableRow key={entry.id} sx={{ bgcolor: 'action.selected', '& td': { borderColor: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(29, 78, 216, 0.2)' } }}>
+                                <TableCell padding="checkbox" sx={{ pl: 2 }} />
                                 {/* 1. Date Input */}
-                                <TableCell sx={{ pl: 2 }}>
+                                <TableCell>
                                   <TextField
                                     type="date"
                                     size="small"
@@ -828,9 +1110,34 @@ const People = () => {
                           }
 
                           return (
-                            <TableRow key={entry.id} hover sx={{ '& td': { borderColor: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(29, 78, 216, 0.2)' } }}>
+                            <TableRow
+                              key={entry.id}
+                              hover
+                              selected={isSelected}
+                              onClick={() => handleClickEntry(entry.id)}
+                              onContextMenu={(e) => handleContextMenu(entry.id, e)}
+                              sx={{
+                                cursor: isSelectionMode ? 'pointer' : 'default',
+                                userSelect: 'none',
+                                WebkitUserSelect: 'none',
+                                bgcolor: isSelected
+                                  ? (isDark ? 'rgba(37, 99, 235, 0.22) !important' : 'rgba(219, 234, 254, 0.65) !important')
+                                  : 'inherit',
+                                '& td': { borderColor: isDark ? 'rgba(37, 99, 235, 0.2)' : 'rgba(29, 78, 216, 0.2)' }
+                              }}
+                            >
+                              <TableCell padding="checkbox" sx={{ pl: 2 }}>
+                                <Checkbox
+                                  size="small"
+                                  color="primary"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectEntry(entry.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  inputProps={{ 'aria-label': `Select entry ${entry.details || 'record'}` }}
+                                />
+                              </TableCell>
                               {/* 1. Date */}
-                              <TableCell sx={{ whiteSpace: 'nowrap', pl: 2 }}>
+                              <TableCell sx={{ whiteSpace: 'nowrap' }}>
                                 <Typography variant="body2" sx={{ fontWeight: 600 }}>{dt.dateStr}</Typography>
                                 <Typography variant="caption" color="text.secondary">{dt.timeStr}</Typography>
                               </TableCell>
@@ -855,10 +1162,26 @@ const People = () => {
 
                               {/* 6. Actions */}
                               <TableCell align="center" sx={{ whiteSpace: 'nowrap', pr: 2 }}>
-                                <IconButton size="small" color="primary" onClick={() => handleStartEditRow(entry)} title="Edit">
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartEditRow(entry);
+                                  }}
+                                  title="Edit"
+                                >
                                   <EditOutlined fontSize="small" />
                                 </IconButton>
-                                <IconButton size="small" color="error" onClick={() => handleDeleteEntry(entry.id)} title="Delete">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteEntry(entry.id);
+                                  }}
+                                  title="Delete"
+                                >
                                   <DeleteOutlineOutlined fontSize="small" />
                                 </IconButton>
                               </TableCell>
@@ -982,6 +1305,72 @@ const People = () => {
                 {savingNote ? <CircularProgress size={20} /> : 'Save'}
               </Button>
             </Box>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete All Entries Confirmation Dialog */}
+        <Dialog
+          open={deleteAllDialogOpen}
+          onClose={() => !deletingAll && setDeleteAllDialogOpen(false)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ fontWeight: 700 }}>Delete All Entries?</DialogTitle>
+          <DialogContent sx={{ pt: '8px !important' }}>
+            <Typography variant="body2" color="text.secondary">
+              Are you sure you want to delete all ledger entries for this person? This action cannot be undone.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+            <Button
+              variant="contained"
+              color="inherit"
+              onClick={() => setDeleteAllDialogOpen(false)}
+              disabled={deletingAll}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleDeleteAllEntries}
+              disabled={deletingAll}
+            >
+              {deletingAll ? <CircularProgress size={20} /> : 'Delete All'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Delete Selected Entries Confirmation Dialog */}
+        <Dialog
+          open={deleteSelectedDialogOpen}
+          onClose={() => !deletingSelected && setDeleteSelectedDialogOpen(false)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ fontWeight: 700 }}>Delete Selected Entries?</DialogTitle>
+          <DialogContent sx={{ pt: '8px !important' }}>
+            <Typography variant="body2" color="text.secondary">
+              {`Are you sure you want to delete ${selectedEntryIds.length} selected ${selectedEntryIds.length === 1 ? 'entry' : 'entries'}? This action cannot be undone.`}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+            <Button
+              variant="contained"
+              color="inherit"
+              onClick={() => setDeleteSelectedDialogOpen(false)}
+              disabled={deletingSelected}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleDeleteSelectedEntries}
+              disabled={deletingSelected}
+            >
+              {deletingSelected ? <CircularProgress size={20} /> : 'Delete'}
+            </Button>
           </DialogActions>
         </Dialog>
       </Box>

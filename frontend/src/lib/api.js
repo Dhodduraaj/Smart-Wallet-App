@@ -331,6 +331,21 @@ const customOfflineAdapter = async (config) => {
         setTimeout(() => sync(), 100);
         return mockResponse(created, 201);
       }
+      if (method === 'DELETE') {
+        await localDb.deleteAllLocalPersonLedgerEntries(personId);
+        setTimeout(() => sync(), 100);
+        return mockResponse(null, 204);
+      }
+    }
+
+    const personLedgerBulkDeleteMatch = cleanUrl.match(/\/api\/people\/([^/]+)\/ledger\/bulk-delete$/);
+    if (personLedgerBulkDeleteMatch && (method === 'POST' || method === 'DELETE')) {
+      const personId = personLedgerBulkDeleteMatch[1];
+      const payload = typeof config.data === 'string' ? JSON.parse(config.data || '{}') : (config.data || {});
+      const entryIds = payload.entryIds || [];
+      await localDb.deleteSelectedLocalPersonLedgerEntries(personId, entryIds);
+      setTimeout(() => sync(), 100);
+      return mockResponse(null, 204);
     }
 
     const personNoteMatch = cleanUrl.match(/\/api\/people\/([^/]+)\/note$/);
