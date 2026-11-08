@@ -124,14 +124,16 @@ const People = () => {
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
-  // Touch handling ref for mobile long-press
-  const touchRef = useRef({
+  // Long-press multi-selection pointer tracking (touch-friendly & WebView-compatible)
+  const pointerRef = useRef({
     startX: 0,
     startY: 0,
+    pointerId: null,
     timer: null,
     longPressed: false,
-    justLongPressed: false,
   });
+  const suppressClickRef = useRef(false);
+  const suppressTimerRef = useRef(null);
 
   // Load people list
   const fetchPeople = async () => {
@@ -284,66 +286,98 @@ const People = () => {
     setSelectedEntryIds(ledgerEntries.map((e) => e.id));
   };
 
-  // Touch handlers for mobile long-press multi-selection
-  const handleTouchStart = (entryId, e) => {
+  const clearLongPressTimer = () => {
+    if (pointerRef.current.timer) {
+      clearTimeout(pointerRef.current.timer);
+      pointerRef.current.timer = null;
+    }
+  };
+
+  // Pointer event handlers for mobile long-press multi-selection (Android WebView & mobile browser compatible)
+  const handlePointerDown = (entryId, e) => {
     if (editingRowId === entryId) return;
-    const touch = e.touches[0];
-    touchRef.current.startX = touch.clientX;
-    touchRef.current.startY = touch.clientY;
-    touchRef.current.longPressed = false;
 
-    if (touchRef.current.timer) {
-      clearTimeout(touchRef.current.timer);
+    // Only track primary touch pointer (ignore secondary touches in multi-touch)
+    if (e.pointerType === 'touch' && !e.isPrimary) return;
+
+    // On desktop mouse, do not start long-press timer (desktop uses right-click / checkboxes)
+    if (e.pointerType === 'mouse') {
+      return;
     }
 
-    touchRef.current.timer = setTimeout(() => {
-      touchRef.current.longPressed = true;
-      touchRef.current.justLongPressed = true;
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try { navigator.vibrate(50); } catch { /* ignore */ }
+    clearLongPressTimer();
+    pointerRef.current.startX = e.clientX;
+    pointerRef.current.startY = e.clientY;
+    pointerRef.current.pointerId = e.pointerId;
+    pointerRef.current.longPressed = false;
+
+    // Start 500ms timer (sweet spot between 450ms and 550ms)
+    pointerRef.current.timer = setTimeout(() => {
+      pointerRef.current.longPressed = true;
+      suppressClickRef.current = true;
+
+      // Provide haptic feedback if supported
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate(50);
+        } catch {
+          // Ignore vibration errors
+        }
       }
-      toggleSelectEntry(entryId);
-      setTimeout(() => {
-        touchRef.current.justLongPressed = false;
-      }, 400);
-    }, 450);
-  };
 
-  const handleTouchMove = (e) => {
-    if (!touchRef.current.timer) return;
-    const touch = e.touches[0];
-    const deltaX = Math.abs(touch.clientX - touchRef.current.startX);
-    const deltaY = Math.abs(touch.clientY - touchRef.current.startY);
-    // Cancel long press if user is scrolling (moved more than 8px)
-    if (deltaX > 8 || deltaY > 8) {
-      clearTimeout(touchRef.current.timer);
-      touchRef.current.timer = null;
-    }
-  };
+      // Ensure the long-pressed entry is selected
+      setSelectedEntryIds((prev) => (prev.includes(entryId) ? prev : [...prev, entryId]));
 
-  const handleTouchEnd = (e) => {
-    if (touchRef.current.timer) {
-      clearTimeout(touchRef.current.timer);
-      touchRef.current.timer = null;
-    }
-    if (touchRef.current.longPressed) {
-      if (e.cancelable) {
-        e.preventDefault();
+      // Keep click suppression active to swallow the upcoming pointerup/click
+      if (suppressTimerRef.current) {
+        clearTimeout(suppressTimerRef.current);
       }
-      touchRef.current.longPressed = false;
+      suppressTimerRef.current = setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 450);
+    }, 500);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!pointerRef.current.timer) return;
+    if (pointerRef.current.pointerId !== null && e.pointerId !== pointerRef.current.pointerId) return;
+
+    const deltaX = Math.abs(e.clientX - pointerRef.current.startX);
+    const deltaY = Math.abs(e.clientY - pointerRef.current.startY);
+    const distance = Math.hypot(deltaX, deltaY);
+
+    // Cancel long press if pointer moves beyond 12px (user is scrolling)
+    if (distance > 12) {
+      clearLongPressTimer();
     }
   };
 
-  const handleTouchCancel = () => {
-    if (touchRef.current.timer) {
-      clearTimeout(touchRef.current.timer);
-      touchRef.current.timer = null;
+  const handlePointerUp = (e) => {
+    if (pointerRef.current.pointerId !== null && e.pointerId !== pointerRef.current.pointerId) return;
+    clearLongPressTimer();
+    if (pointerRef.current.longPressed) {
+      suppressClickRef.current = true;
+      pointerRef.current.longPressed = false;
+      if (suppressTimerRef.current) {
+        clearTimeout(suppressTimerRef.current);
+      }
+      suppressTimerRef.current = setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 450);
     }
-    touchRef.current.longPressed = false;
+  };
+
+  const handlePointerCancel = () => {
+    clearLongPressTimer();
+    pointerRef.current.longPressed = false;
   };
 
   const handleClickEntry = (entryId) => {
-    if (touchRef.current.justLongPressed) return;
+    // If long press was just triggered, suppress the follow-up click event
+    if (suppressClickRef.current) {
+      return;
+    }
+    // In selection mode, tapping an entry selects or deselects it
     if (selectedEntryIds.length > 0) {
       toggleSelectEntry(entryId);
     }
@@ -352,6 +386,17 @@ const People = () => {
   const handleContextMenu = (entryId, e) => {
     e.preventDefault();
     if (editingRowId === entryId) return;
+
+    // Suppress context menu if triggered during/after touch long press
+    if (suppressClickRef.current || pointerRef.current.longPressed) {
+      return;
+    }
+    const native = e.nativeEvent;
+    if (native && (native.pointerType === 'touch' || native.sourceCapabilities?.firesTouchEvents)) {
+      return;
+    }
+
+    // Genuine desktop mouse right-click toggles selection
     toggleSelectEntry(entryId);
   };
 
@@ -619,6 +664,15 @@ const People = () => {
             </Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+
+            <Button
+              variant="contained"
+              startIcon={<AddOutlined />}
+              onClick={() => setEntryDialogOpen(true)}
+              sx={{ borderRadius: 1.5, px: 2, py: 0.75, fontSize: { xs: '0.75rem', sm: '0.85rem' } }}
+            >
+              Add Entry
+            </Button>
             <Button
               variant="contained"
               color="error"
@@ -628,14 +682,6 @@ const People = () => {
               sx={{ borderRadius: 1.5, px: 2, py: 0.75, fontSize: { xs: '0.75rem', sm: '0.85rem' } }}
             >
               Delete All
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<AddOutlined />}
-              onClick={() => setEntryDialogOpen(true)}
-              sx={{ borderRadius: 1.5, px: 2, py: 0.75, fontSize: { xs: '0.75rem', sm: '0.85rem' } }}
-            >
-              Add Entry
             </Button>
           </Box>
         </Box>
@@ -869,10 +915,10 @@ const People = () => {
                       return (
                         <Card
                           key={entry.id}
-                          onTouchStart={(e) => handleTouchStart(entry.id, e)}
-                          onTouchMove={handleTouchMove}
-                          onTouchEnd={handleTouchEnd}
-                          onTouchCancel={handleTouchCancel}
+                          onPointerDown={(e) => handlePointerDown(entry.id, e)}
+                          onPointerMove={handlePointerMove}
+                          onPointerUp={handlePointerUp}
+                          onPointerCancel={handlePointerCancel}
                           onClick={() => handleClickEntry(entry.id)}
                           onContextMenu={(e) => handleContextMenu(entry.id, e)}
                           sx={{
@@ -890,6 +936,7 @@ const People = () => {
                             userSelect: 'none',
                             WebkitUserSelect: 'none',
                             WebkitTouchCallout: 'none',
+                            touchAction: 'pan-y',
                           }}
                         >
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
@@ -898,6 +945,7 @@ const People = () => {
                                 <Checkbox
                                   checked={isSelected}
                                   onChange={() => toggleSelectEntry(entry.id)}
+                                  onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => e.stopPropagation()}
                                   size="small"
                                   sx={{ p: 0, mt: 0.25 }}
@@ -916,6 +964,7 @@ const People = () => {
                               <IconButton
                                 size="small"
                                 color="primary"
+                                onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleStartEditRow(entry);
@@ -927,6 +976,7 @@ const People = () => {
                               <IconButton
                                 size="small"
                                 color="error"
+                                onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteEntry(entry.id);
@@ -1114,12 +1164,18 @@ const People = () => {
                               key={entry.id}
                               hover
                               selected={isSelected}
+                              onPointerDown={(e) => handlePointerDown(entry.id, e)}
+                              onPointerMove={handlePointerMove}
+                              onPointerUp={handlePointerUp}
+                              onPointerCancel={handlePointerCancel}
                               onClick={() => handleClickEntry(entry.id)}
                               onContextMenu={(e) => handleContextMenu(entry.id, e)}
                               sx={{
                                 cursor: isSelectionMode ? 'pointer' : 'default',
                                 userSelect: 'none',
                                 WebkitUserSelect: 'none',
+                                WebkitTouchCallout: 'none',
+                                touchAction: 'pan-y',
                                 bgcolor: isSelected
                                   ? (isDark ? 'rgba(37, 99, 235, 0.22) !important' : 'rgba(219, 234, 254, 0.65) !important')
                                   : 'inherit',
@@ -1132,6 +1188,7 @@ const People = () => {
                                   color="primary"
                                   checked={isSelected}
                                   onChange={() => toggleSelectEntry(entry.id)}
+                                  onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => e.stopPropagation()}
                                   inputProps={{ 'aria-label': `Select entry ${entry.details || 'record'}` }}
                                 />
@@ -1165,6 +1222,7 @@ const People = () => {
                                 <IconButton
                                   size="small"
                                   color="primary"
+                                  onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleStartEditRow(entry);
@@ -1176,6 +1234,7 @@ const People = () => {
                                 <IconButton
                                   size="small"
                                   color="error"
+                                  onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleDeleteEntry(entry.id);
