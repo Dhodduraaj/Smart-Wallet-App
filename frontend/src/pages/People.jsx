@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../lib/api';
 import {
   formatTransactionDateTime,
@@ -124,6 +124,9 @@ const People = () => {
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
+  // Search within person's ledger entries
+  const [ledgerSearch, setLedgerSearch] = useState('');
+
   // Long-press multi-selection pointer tracking (touch-friendly & WebView-compatible)
   const pointerRef = useRef({
     startX: 0,
@@ -172,6 +175,7 @@ const People = () => {
   }, [search]);
 
   useEffect(() => {
+    setLedgerSearch('');
     if (selectedPerson?.id) {
       fetchLedger(selectedPerson.id);
     }
@@ -282,9 +286,25 @@ const People = () => {
     setSelectedEntryIds([]);
   };
 
+  // Filtered ledger entries based on details search query (case-insensitive & partial match)
+  const filteredLedgerEntries = useMemo(() => {
+    const query = ledgerSearch.trim().toLowerCase();
+    if (!query) return ledgerEntries;
+    return ledgerEntries.filter((entry) =>
+      (entry.details || '').toLowerCase().includes(query)
+    );
+  }, [ledgerEntries, ledgerSearch]);
+
   const selectAllEntries = () => {
-    setSelectedEntryIds(ledgerEntries.map((e) => e.id));
+    setSelectedEntryIds(filteredLedgerEntries.map((e) => e.id));
   };
+
+  // Safely reconcile selection when search changes so hidden entries are not selected
+  useEffect(() => {
+    if (selectedEntryIds.length === 0) return;
+    const visibleIds = new Set(filteredLedgerEntries.map((e) => e.id));
+    setSelectedEntryIds((prev) => prev.filter((id) => visibleIds.has(id)));
+  }, [filteredLedgerEntries]);
 
   const clearLongPressTimer = () => {
     if (pointerRef.current.timer) {
@@ -408,6 +428,7 @@ const People = () => {
       await api.delete(`/api/people/${selectedPerson.id}/ledger`);
       toast.success('All ledger entries deleted');
       clearSelection();
+      setLedgerSearch('');
       setDeleteAllDialogOpen(false);
       await fetchLedger(selectedPerson.id);
       fetchPeople();
@@ -816,23 +837,95 @@ const People = () => {
                       Personal Ledger Records
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {ledgerEntries.length} {ledgerEntries.length === 1 ? 'entry' : 'entries'}
+                      {ledgerSearch.trim()
+                        ? `${filteredLedgerEntries.length} of ${ledgerEntries.length} entries`
+                        : `${ledgerEntries.length} ${ledgerEntries.length === 1 ? 'entry' : 'entries'}`}
                     </Typography>
                   </>
                 )}
               </Box>
+
+              {/* Search Bar - Contained background, responsive, light/dark compatible */}
+              {!ledgerLoading && (ledgerEntries.length > 0 || ledgerSearch.trim() !== '') && (
+                <Box
+                  sx={{
+                    p: { xs: 1.25, sm: 1.5 },
+                    borderBottom: '1px solid',
+                    borderColor: sectionBorderColor,
+                    bgcolor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
+                  }}
+                >
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Search entries by details..."
+                    value={ledgerSearch}
+                    onChange={(e) => setLedgerSearch(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchOutlined fontSize="small" sx={{ color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: ledgerSearch ? (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            aria-label="Clear search"
+                            onClick={() => setLedgerSearch('')}
+                            edge="end"
+                          >
+                            <CloseOutlined fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
+                      sx: {
+                        borderRadius: 1.5,
+                        bgcolor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#f8fafc',
+                        '& fieldset': {
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.25)',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: 'primary.main',
+                        },
+                      },
+                    }}
+                  />
+                </Box>
+              )}
 
               {ledgerLoading ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
               ) : isMobile ? (
                 // Mobile layout with inline editing capability
                 <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  {ledgerEntries.length === 0 ? (
+                  {filteredLedgerEntries.length === 0 ? (
                     <Box sx={{ p: 4, textAlign: 'center' }}>
-                      <Typography color="text.secondary" variant="body2">No entries in {selectedPerson.name}'s ledger yet.</Typography>
+                      {ledgerSearch.trim() ? (
+                        <>
+                          <Typography color="text.secondary" variant="body2" sx={{ mb: 1.5 }}>
+                            No matching entries found.
+                          </Typography>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => setLedgerSearch('')}
+                            sx={{ borderRadius: 1.5, textTransform: 'none' }}
+                          >
+                            Clear search
+                          </Button>
+                        </>
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          No entries in {selectedPerson.name}'s ledger yet.
+                        </Typography>
+                      )}
                     </Box>
                   ) : (
-                    ledgerEntries.map((entry) => {
+                    filteredLedgerEntries.map((entry) => {
                       const dt = formatTransactionDateTime(entry.date || entry.createdAt);
                       const inc = parseFloat(entry.incomingMoney || 0);
                       const out = parseFloat(entry.outgoingMoney || 0);
@@ -1034,8 +1127,8 @@ const People = () => {
                           <Checkbox
                             size="small"
                             color="primary"
-                            indeterminate={selectedEntryIds.length > 0 && selectedEntryIds.length < ledgerEntries.length}
-                            checked={ledgerEntries.length > 0 && selectedEntryIds.length === ledgerEntries.length}
+                            indeterminate={selectedEntryIds.length > 0 && selectedEntryIds.length < filteredLedgerEntries.length}
+                            checked={filteredLedgerEntries.length > 0 && selectedEntryIds.length === filteredLedgerEntries.length}
                             onChange={(e) => {
                               if (e.target.checked) {
                                 selectAllEntries();
@@ -1055,14 +1148,28 @@ const People = () => {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {ledgerEntries.length === 0 ? (
+                      {filteredLedgerEntries.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={7} align="center" sx={{ py: 6, borderColor: sectionBorderColor }}>
-                            <Typography color="text.secondary">No entries recorded for {selectedPerson.name}</Typography>
+                            {ledgerSearch.trim() ? (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+                                <Typography color="text.secondary">No matching entries found.</Typography>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => setLedgerSearch('')}
+                                  sx={{ borderRadius: 1.5, textTransform: 'none' }}
+                                >
+                                  Clear search
+                                </Button>
+                              </Box>
+                            ) : (
+                              <Typography color="text.secondary">No entries recorded for {selectedPerson.name}</Typography>
+                            )}
                           </TableCell>
                         </TableRow>
                       ) : (
-                        ledgerEntries.map((entry) => {
+                        filteredLedgerEntries.map((entry) => {
                           const dt = formatTransactionDateTime(entry.date || entry.createdAt);
                           const inc = parseFloat(entry.incomingMoney || 0);
                           const out = parseFloat(entry.outgoingMoney || 0);
