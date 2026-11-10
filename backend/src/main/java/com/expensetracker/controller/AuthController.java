@@ -63,6 +63,7 @@ public class AuthController {
                     .email(normalizedEmail)
                     .fullName(request.getFullName() != null ? request.getFullName().trim() : normalizedEmail.split("@")[0])
                     .password(passwordEncoder.encode(request.getPassword()))
+                    .onboardingCompleted(true)
                     .build();
             user = userRepository.save(user);
             log.info("Registered new user: {}", normalizedEmail);
