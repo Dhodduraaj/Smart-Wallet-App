@@ -187,3 +187,4 @@ public class AuthControllerTest {
         userRepository.findByEmail(newEmail).ifPresent(userRepository::delete);
     }
 }
+

@@ -301,3 +301,4 @@ assert.strictEqual(pref1.store['token'], undefined, 'Token must be removed from 
 console.log('  ✓ Expired token correctly invalidates session and prompts login');
 
 console.log('\nAll 8 Password Verification & Session Resilience tests passed successfully! 🚀');
+
