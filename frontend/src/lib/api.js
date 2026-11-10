@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Preferences } from '@capacitor/preferences';
 import * as localDb from './db';
 import { generatePdfReportLocal } from './pdf';
 import { sync } from './sync';
@@ -431,14 +432,16 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const url = error.config?.url || '';
+    const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register');
+    if (error.response?.status === 401 && !isAuthEndpoint) {
       logOutUser(true);
     }
     return Promise.reject(error);
   }
 );
 
-function logOutUser(sessionExpired = false) {
+async function logOutUser(sessionExpired = false) {
   if (isLoggingOut) return;
   isLoggingOut = true;
   setTimeout(() => {
@@ -447,6 +450,18 @@ function logOutUser(sessionExpired = false) {
 
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+  try {
+    await Preferences.remove({ key: 'token' });
+    const raw = localStorage.getItem('smart_wallet_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      parsed.isAuthenticated = false;
+      localStorage.setItem('smart_wallet_data', JSON.stringify(parsed));
+      await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(parsed) });
+    }
+  } catch (err) {
+    console.warn('[logOutUser] Failed to clear Preferences:', err);
+  }
 
   if (sessionExpired) {
     sessionStorage.setItem('authMessage', 'Session expired. Please login again.');

@@ -21,6 +21,12 @@ public class User {
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
+    @Column(name = "password")
+    private String password;
+
+    @Column(name = "full_name")
+    private String fullName;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
