@@ -441,6 +441,9 @@ api.interceptors.response.use(
 function logOutUser(sessionExpired = false) {
   if (isLoggingOut) return;
   isLoggingOut = true;
+  setTimeout(() => {
+    isLoggingOut = false;
+  }, 2000);
 
   localStorage.removeItem('token');
   localStorage.removeItem('user');

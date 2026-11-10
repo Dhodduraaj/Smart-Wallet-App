@@ -24,25 +24,95 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        // Hydrate localStorage from Capacitor Preferences
-        const { value: storedData } = await Preferences.get({ key: 'smart_wallet_data' });
-        if (storedData) {
-          localStorage.setItem('smart_wallet_data', storedData);
-        }
-        const { value: token } = await Preferences.get({ key: 'token' });
-        if (token) {
-          localStorage.setItem('token', token);
+        let prefStoredData = null;
+        let prefToken = null;
+
+        // 1. Safely attempt to read native Capacitor Preferences (SharedPreferences on Android)
+        try {
+          const prefDataRes = await Preferences.get({ key: 'smart_wallet_data' });
+          prefStoredData = prefDataRes?.value;
+          const prefTokenRes = await Preferences.get({ key: 'token' });
+          prefToken = prefTokenRes?.value;
+        } catch (prefErr) {
+          console.warn('[Auth Bootstrap] Native Preferences read failed or not available:', prefErr);
         }
 
+        // 2. Check local storage
+        const localRaw = localStorage.getItem('smart_wallet_data');
+
+        // 3. Hydrate or reconcile between Preferences and localStorage
+        if (prefStoredData) {
+          try {
+            const parsedPref = JSON.parse(prefStoredData);
+            if (parsedPref && parsedPref.data) {
+              if (!localRaw) {
+                localStorage.setItem('smart_wallet_data', prefStoredData);
+              } else {
+                try {
+                  const parsedLocal = JSON.parse(localRaw);
+                  // If localStorage is unauthenticated but native Preferences has an active session, restore it
+                  if (parsedPref.isAuthenticated === true && parsedLocal.isAuthenticated !== true) {
+                    localStorage.setItem('smart_wallet_data', prefStoredData);
+                  }
+                } catch {
+                  localStorage.setItem('smart_wallet_data', prefStoredData);
+                }
+              }
+            }
+          } catch {
+            // invalid JSON in preferences, ignore
+          }
+        }
+
+        if (prefToken && !localStorage.getItem('token')) {
+          localStorage.setItem('token', prefToken);
+        }
+
+        // 4. Retrieve stored data through standard db layer
         const store = getStoredData();
-        // Startup logic: IF isAuthenticated == true -> go to home, ELSE -> show login screen
+
+        // 5. Check authentication state
         if (store && store.isAuthenticated === true && store.data && store.data.profile) {
-          setUser(buildUserProfile(store));
+          const userProfile = buildUserProfile(store);
+          setUser(userProfile);
+
+          // Ensure native Preferences also has the latest stored data
+          try {
+            await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
+          } catch {
+            // ignore
+          }
         } else {
+          // If store is not authenticated, verify if Preferences had authenticated data
+          if (prefStoredData) {
+            try {
+              const parsedPref = JSON.parse(prefStoredData);
+              if (parsedPref && parsedPref.isAuthenticated === true && parsedPref.data && parsedPref.data.profile) {
+                localStorage.setItem('smart_wallet_data', prefStoredData);
+                setUser(buildUserProfile(parsedPref));
+                return;
+              }
+            } catch {
+              // ignore
+            }
+          }
           setUser(null);
         }
       } catch (err) {
-        console.error('[Auth Bootstrap] Failed to load local profile:', err);
+        console.error('[Auth Bootstrap] Error in bootstrap:', err);
+        // Robust fallback: inspect raw localStorage directly before defaulting to unauthenticated
+        try {
+          const raw = localStorage.getItem('smart_wallet_data');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.isAuthenticated === true && parsed.data && parsed.data.profile) {
+              setUser(buildUserProfile(parsed));
+              return;
+            }
+          }
+        } catch {
+          // ignore
+        }
         setUser(null);
       } finally {
         setLoading(false);

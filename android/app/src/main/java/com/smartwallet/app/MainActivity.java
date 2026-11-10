@@ -27,6 +27,15 @@ public class MainActivity extends BridgeActivity {
 
         // Enable WebView debugging
         WebView.setWebContentsDebuggingEnabled(true);
+
+        // Ensure persistent webview storage settings
+        if (this.bridge != null) {
+            WebView webView = this.bridge.getWebView();
+            if (webView != null) {
+                webView.getSettings().setDomStorageEnabled(true);
+                webView.getSettings().setDatabaseEnabled(true);
+            }
+        }
     }
 
     @CapacitorPlugin(name = "PdfDownloader")

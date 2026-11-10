@@ -100,9 +100,13 @@ export function getStoredData() {
 export function saveStoredData(obj) {
   const raw = JSON.stringify(obj);
   localStorage.setItem(STORAGE_KEY, raw);
-  Preferences.set({ key: STORAGE_KEY, value: raw }).catch(err => {
-    console.error('[Preferences] Failed to save stored data:', err);
-  });
+  try {
+    Preferences.set({ key: STORAGE_KEY, value: raw }).catch(err => {
+      console.warn('[Preferences] Failed to save stored data:', err);
+    });
+  } catch (err) {
+    console.warn('[Preferences] Synchronous failure in saveStoredData:', err);
+  }
 }
 
 // User Profile Helpers
@@ -762,7 +766,11 @@ export async function getLocalReportData(startDate, endDate) {
 
 export async function clearLocalDb() {
   localStorage.removeItem(STORAGE_KEY);
-  await Preferences.remove({ key: STORAGE_KEY });
+  try {
+    await Preferences.remove({ key: STORAGE_KEY });
+  } catch (err) {
+    console.warn('[Preferences] Failed to remove stored data:', err);
+  }
 }
 
 export async function restoreDbFromBackup(backupObj) {
