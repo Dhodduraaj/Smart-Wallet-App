@@ -1,5 +1,6 @@
 package com.expensetracker.controller;
 
+import com.expensetracker.dto.AccountRecoveryRequest;
 import com.expensetracker.dto.LoginRequest;
 import com.expensetracker.dto.RegisterRequest;
 import com.expensetracker.entity.User;
@@ -185,6 +186,91 @@ public class AuthControllerTest {
 
         // Clean up
         userRepository.findByEmail(newEmail).ifPresent(userRepository::delete);
+    }
+
+    @Test
+    @DisplayName("Scenario 9: Account Recovery - New local user recovered and synchronized to cloud")
+    void testRecoverAndSyncNewUser() throws Exception {
+        String recoveryEmail = "recover_new_" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";
+        UUID localUserId = UUID.randomUUID();
+        UUID cashAccId = UUID.randomUUID();
+        UUID expId = UUID.randomUUID();
+
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("accounts", java.util.List.of(java.util.Map.of(
+                "id", cashAccId.toString(),
+                "accountName", "Cash",
+                "accountType", "SYSTEM",
+                "currentBalance", 500
+        )));
+        payload.put("expenses", java.util.List.of(java.util.Map.of(
+                "id", expId.toString(),
+                "amount", 150,
+                "category", "Food",
+                "description", "Dinner",
+                "expenseDate", "2026-11-10",
+                "paymentMode", "CASH",
+                "accountId", cashAccId.toString()
+        )));
+        payload.put("people", java.util.List.of(java.util.Map.of("id", "p1", "name", "Alice")));
+        payload.put("peopleLedger", java.util.List.of(java.util.Map.of("id", "pl1", "personId", "p1", "incomingMoney", 100)));
+
+        AccountRecoveryRequest recoveryRequest = AccountRecoveryRequest.builder()
+                .email(recoveryEmail)
+                .password("StrongPass123!")
+                .localUserId(localUserId.toString())
+                .fullName("Recovered User")
+                .payload(payload)
+                .build();
+
+        mockMvc.perform(post("/api/auth/recover-and-sync")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(recoveryRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token", notNullValue()))
+                .andExpect(jsonPath("$.userId").value(localUserId.toString()))
+                .andExpect(jsonPath("$.email").value(recoveryEmail))
+                .andExpect(jsonPath("$.syncedCounts.expenses").value(1))
+                .andExpect(jsonPath("$.syncedCounts.accounts").value(1))
+                .andExpect(jsonPath("$.syncedCounts.people").value(1))
+                .andExpect(jsonPath("$.syncedCounts.peopleLedger").value(1));
+
+        // Clean up
+        userRepository.findByEmail(recoveryEmail).ifPresent(userRepository::delete);
+    }
+
+    @Test
+    @DisplayName("Scenario 10: Account Recovery - Existing cloud user with correct password reconciles data")
+    void testRecoverAndSyncExistingUserCorrectPassword() throws Exception {
+        AccountRecoveryRequest recoveryRequest = AccountRecoveryRequest.builder()
+                .email(TEST_EMAIL)
+                .password(TEST_PASSWORD)
+                .fullName("Auth Test User")
+                .payload(java.util.Map.of("expenses", java.util.List.of()))
+                .build();
+
+        mockMvc.perform(post("/api/auth/recover-and-sync")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(recoveryRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token", notNullValue()))
+                .andExpect(jsonPath("$.email").value(TEST_EMAIL));
+    }
+
+    @Test
+    @DisplayName("Scenario 11: Account Recovery - Existing cloud user with WRONG password rejected (HTTP 401)")
+    void testRecoverAndSyncExistingUserWrongPassword() throws Exception {
+        AccountRecoveryRequest recoveryRequest = AccountRecoveryRequest.builder()
+                .email(TEST_EMAIL)
+                .password("TotallyWrongPassword999!")
+                .fullName("Auth Test User")
+                .payload(java.util.Map.of())
+                .build();
+
+        mockMvc.perform(post("/api/auth/recover-and-sync")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(recoveryRequest)))
+                .andExpect(status().isUnauthorized());
     }
 }
 

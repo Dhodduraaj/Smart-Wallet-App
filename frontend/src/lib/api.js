@@ -47,6 +47,7 @@ const customOfflineAdapter = async (config) => {
   const isOnlineOnlyAction = 
     cleanUrl.includes('/api/auth/login') ||
     cleanUrl.includes('/api/auth/register') ||
+    cleanUrl.includes('/api/auth/recover-and-sync') ||
     cleanUrl.includes('/api/user/change-password');
 
   if (!isOnline && isOnlineOnlyAction) {
@@ -433,7 +434,9 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const url = error.config?.url || '';
-    const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register');
+    const isAuthEndpoint = url.includes('/api/auth/login') || 
+                           url.includes('/api/auth/register') || 
+                           url.includes('/api/auth/recover-and-sync');
     if (error.response?.status === 401 && !isAuthEndpoint) {
       logOutUser(true);
     }

@@ -51,6 +51,7 @@ public class SyncController {
             User user = User.builder()
                     .id(localUserId)
                     .email(email)
+                    .onboardingCompleted(true)
                     .build();
             userRepository.save(user);
             log.info("Registered new user record: {}", email);
@@ -93,6 +94,7 @@ public class SyncController {
                 User user = User.builder()
                         .id(localUserId)
                         .email(email)
+                        .onboardingCompleted(true)
                         .build();
                 userRepository.save(user);
                 log.info("Auto-registered user during update: {}", email);

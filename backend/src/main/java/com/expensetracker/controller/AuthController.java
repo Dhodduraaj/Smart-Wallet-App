@@ -1,5 +1,6 @@
 package com.expensetracker.controller;
 
+import com.expensetracker.dto.AccountRecoveryRequest;
 import com.expensetracker.dto.AuthResponse;
 import com.expensetracker.dto.LoginRequest;
 import com.expensetracker.dto.RegisterRequest;
@@ -7,6 +8,7 @@ import com.expensetracker.dto.UserDto;
 import com.expensetracker.entity.User;
 import com.expensetracker.repository.UserRepository;
 import com.expensetracker.security.JwtTokenProvider;
+import com.expensetracker.service.AccountRecoveryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,6 +33,7 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final AccountRecoveryService accountRecoveryService;
 
     @PostMapping("/register")
     @Operation(summary = "Register a new user")
@@ -95,7 +98,7 @@ public class AuthController {
         if (userOpt.isEmpty()) {
             log.warn("Login failed: User not found for email {}", normalizedEmail);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Invalid email or password"));
+                    .body(Map.of("message", "Invalid email or password", "userNotFound", true));
         }
 
         User user = userOpt.get();
@@ -115,6 +118,12 @@ public class AuthController {
                 .fullName(user.getFullName())
                 .onboardingCompleted(true)
                 .build());
+    }
+
+    @PostMapping("/recover-and-sync")
+    @Operation(summary = "Recover local offline account and synchronize with Neon cloud")
+    public ResponseEntity<?> recoverAndSync(@RequestBody AccountRecoveryRequest request) {
+        return accountRecoveryService.recoverAndSync(request);
     }
 
     @GetMapping("/me")

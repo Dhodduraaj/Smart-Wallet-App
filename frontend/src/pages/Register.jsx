@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, hasLocalFinancialData } from '../context/AuthContext';
+import { getStoredData } from '../lib/db';
 import {
   Box,
   Card,
@@ -11,15 +12,14 @@ import {
   InputAdornment,
   Alert,
   CircularProgress,
-  Divider,
   Grid,
-  MenuItem,
 } from '@mui/material';
 import {
   EmailOutlined,
   LockOutlined,
   PersonOutlineOutlined,
   AccountBalanceWalletOutlined,
+  CloudSync,
 } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 import PasswordField from '../components/PasswordField';
@@ -30,9 +30,40 @@ const Register = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [localDataInfo, setLocalDataInfo] = useState(null);
 
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    try {
+      const store = getStoredData();
+      if (hasLocalFinancialData(store)) {
+        const expenses = store.data?.expenses?.length || 0;
+        const incomes = store.data?.incomes?.length || 0;
+        const people = store.data?.people?.length || 0;
+        const peopleLedger = store.data?.peopleLedger?.length || 0;
+        const totalRecords = expenses + incomes + peopleLedger;
+
+        const detectedEmail = store.email || store.data?.profile?.email || '';
+        const detectedName = store.data?.profile?.fullName || '';
+
+        setLocalDataInfo({
+          totalRecords,
+          expenses,
+          incomes,
+          people,
+          email: detectedEmail,
+          fullName: detectedName
+        });
+
+        if (detectedEmail && !email) setEmail(detectedEmail);
+        if (detectedName && !fullName && detectedName !== 'Local User') setFullName(detectedName);
+      }
+    } catch (e) {
+      console.warn('Failed to detect local data on Register mount:', e);
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -49,7 +80,7 @@ const Register = () => {
     setSubmitting(true);
     try {
       await register(fullName, email, password);
-      toast.success('Registration successful! Welcome.');
+      toast.success(localDataInfo?.totalRecords > 0 ? 'Account recovered & data synchronized!' : 'Registration successful! Welcome.');
       navigate('/');
     } catch (err) {
       setError(
@@ -74,7 +105,7 @@ const Register = () => {
         py: 4,
       }}
     >
-      <Card sx={{ maxWidth: 650, width: '100%', borderRadius: 4, backdropFilter: 'blur(20px)', bgcolor: 'rgba(17, 24, 39, 0.8)' }}>
+      <Card sx={{ maxWidth: 650, width: '100%', borderRadius: 4, backdropFilter: 'blur(20px)', bgcolor: 'rgba(17, 24, 39, 0.85)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)' }}>
         <CardContent sx={{ p: 4 }}>
           {/* Header */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
@@ -89,18 +120,34 @@ const Register = () => {
             </Typography>
           </Box>
 
+          {/* Local records notification */}
+          {localDataInfo && localDataInfo.totalRecords > 0 && (
+            <Alert
+              severity="info"
+              icon={<CloudSync fontSize="inherit" />}
+              sx={{
+                mb: 3,
+                borderRadius: 2,
+                bgcolor: 'rgba(99, 102, 241, 0.12)',
+                color: '#c7d2fe',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                '& .MuiAlert-icon': { color: '#818cf8' }
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                Local Financial Records Detected
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.82rem' }}>
+                Found <strong>{localDataInfo.totalRecords} records</strong> on this device. Submitting will link and synchronize your existing local data with your cloud account safely without loss.
+              </Typography>
+            </Alert>
+          )}
+
           {error && <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>{error}</Alert>}
 
           <form onSubmit={handleSubmit}>
             <Grid container spacing={2} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'left' }}>
-              {/* User Info */}
-              {/*<Grid item xs={12}>
-                <Typography variant="subtitle2" color="primary" sx={{ mb: 1, fontWeight: 600}} >
-                  PERSONAL DETAILS
-                </Typography>
-              </Grid>*/}
-
-              <Grid item xs={12} sm={6} sx={{ width:400, maxWidth: '100%' }}>
+              <Grid item xs={12} sm={6} sx={{ width: 400, maxWidth: '100%' }}>
                 <TextField
                   fullWidth
                   label="Full Name"
@@ -117,7 +164,7 @@ const Register = () => {
                 />
               </Grid>
     
-              <Grid item xs={12} sm={6} sx={{ width:400, maxWidth: '100%' }}>
+              <Grid item xs={12} sm={6} sx={{ width: 400, maxWidth: '100%' }}>
                 <TextField
                   fullWidth
                   label="Email Address"
@@ -148,16 +195,22 @@ const Register = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} sx={{ mt: 3, width:200, maxWidth: '100%' }}>
+              <Grid item xs={12} sx={{ width: 400, maxWidth: '100%', mt: 2 }}>
                 <Button
                   fullWidth
                   type="submit"
                   variant="contained"
                   size="large"
                   disabled={submitting}
-                  sx={{ py: 1.5 }}
+                  sx={{ py: 1.5, fontWeight: 700, borderRadius: 2, textTransform: 'none', fontSize: '1rem' }}
                 >
-                  {submitting ? <CircularProgress size={24} color="inherit" /> : 'Create Account'}
+                  {submitting ? (
+                    <CircularProgress size={24} color="inherit" />
+                  ) : localDataInfo && localDataInfo.totalRecords > 0 ? (
+                    'Register & Sync Existing Data'
+                  ) : (
+                    'Create Account'
+                  )}
                 </Button>
               </Grid>
             </Grid>

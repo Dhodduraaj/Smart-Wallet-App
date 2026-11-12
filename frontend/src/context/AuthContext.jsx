@@ -6,6 +6,42 @@ import { Preferences } from '@capacitor/preferences';
 
 const AuthContext = createContext(null);
 
+export const hasLocalFinancialData = (store) => {
+  if (!store || !store.data) return false;
+  const d = store.data;
+  const hasExpenses = Array.isArray(d.expenses) && d.expenses.length > 0;
+  const hasIncomes = Array.isArray(d.incomes) && d.incomes.length > 0;
+  const hasTransfers = Array.isArray(d.transfers) && d.transfers.length > 0;
+  const hasPeople = Array.isArray(d.people) && d.people.length > 0;
+  const hasPeopleLedger = Array.isArray(d.peopleLedger) && d.peopleLedger.length > 0;
+  const hasReminders = Array.isArray(d.reminders) && d.reminders.length > 0;
+  const hasCustomAccounts = Array.isArray(d.accounts) && d.accounts.some(
+    a => a.accountType !== 'SYSTEM' || (a.currentBalance && Number(a.currentBalance) !== 0)
+  );
+  return hasExpenses || hasIncomes || hasTransfers || hasPeople || hasPeopleLedger || hasReminders || hasCustomAccounts;
+};
+
+export const createLocalDataBackup = async () => {
+  try {
+    const raw = localStorage.getItem('smart_wallet_data');
+    if (raw) {
+      const timestamp = new Date().toISOString();
+      localStorage.setItem('smart_wallet_backup_pre_recovery', raw);
+      localStorage.setItem('smart_wallet_backup_timestamp', timestamp);
+      try {
+        await Preferences.set({ key: 'smart_wallet_backup_pre_recovery', value: raw });
+        await Preferences.set({ key: 'smart_wallet_backup_timestamp', value: timestamp });
+      } catch (prefErr) {
+        console.warn('[Backup] Preferences backup error:', prefErr);
+      }
+      return true;
+    }
+  } catch (err) {
+    console.error('[Backup] Failed to create local safety backup:', err);
+  }
+  return false;
+};
+
 const buildUserProfile = (store) => {
   if (!store || !store.data || !store.data.profile) return null;
   const uid = store.localUserId || store.data.profile.userId || store.data.profile.id;
@@ -173,64 +209,160 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  const login = async (email, password) => {
+  const recoverAndSyncLocalAccount = async (email, password, onProgress = null) => {
     window.__isLoggingIn = true;
     try {
       const normalizedEmail = email.trim().toLowerCase();
+      
+      // Step 1: Pre-recovery backup & data identification
+      onProgress?.({
+        step: 1,
+        title: 'Local account detected',
+        detail: 'Scanning local financial data and creating safety backup...'
+      });
+      await createLocalDataBackup();
 
-      // 1. Authenticate against the backend API
-      // If password is wrong or user does not exist, the API returns 401 and this throws!
-      const response = await api.post('/api/auth/login', {
-        email: normalizedEmail,
-        password: password
+      const store = getStoredData();
+      const localUserId = store.localUserId || generateUUID();
+      const fullName = store.data?.profile?.fullName || normalizedEmail.split('@')[0];
+
+      // Assemble full payload
+      const rawExpenses = store.data?.expenses || [];
+      const rawIncomes = store.data?.incomes || [];
+      const transactions = [
+        ...rawExpenses.map(e => ({ ...e, transactionType: 'expense' })),
+        ...rawIncomes.map(i => ({ ...i, transactionType: 'income' }))
+      ];
+
+      const payloadData = {
+        accounts: store.data?.accounts || [],
+        expenses: rawExpenses,
+        incomes: rawIncomes,
+        transactions,
+        transfers: store.data?.transfers || [],
+        reminders: store.data?.reminders || [],
+        people: store.data?.people || [],
+        peopleLedger: store.data?.peopleLedger || [],
+        profile: store.data?.profile || {},
+        settings: store.data?.settings || {}
+      };
+
+      // Step 2: Cloud Account Check
+      onProgress?.({
+        step: 2,
+        title: 'Cloud account checked',
+        detail: 'Connecting to Neon cloud database...'
       });
 
-      const { token, userId, fullName } = response.data || {};
+      // Step 3 & 4: Call backend recover-and-sync endpoint
+      onProgress?.({
+        step: 3,
+        title: 'Records identified & account recovering',
+        detail: `Preparing ${rawExpenses.length} expenses, ${rawIncomes.length} incomes, ${(store.data?.peopleLedger || []).length} ledger entries...`
+      });
+
+      const response = await api.post('/api/auth/recover-and-sync', {
+        localUserId: localUserId,
+        email: normalizedEmail,
+        password: password,
+        fullName: fullName,
+        payload: payloadData
+      });
+
+      const { token, userId, fullName: resFullName, syncedCounts } = response.data || {};
       if (!token) {
-        throw new Error('Authentication failed: No token received from server');
+        throw new Error('Recovery failed: No token received from server');
       }
 
-      // 2. Persist token in localStorage and Capacitor Preferences
+      onProgress?.({
+        step: 4,
+        title: 'Records synchronized',
+        detail: `Uploaded ${syncedCounts?.expenses ?? rawExpenses.length} expenses, ${syncedCounts?.incomes ?? rawIncomes.length} incomes, ${syncedCounts?.accounts ?? (store.data?.accounts || []).length} accounts to Neon PostgreSQL.`
+      });
+
+      // Save token in dual storage
       localStorage.setItem('token', token);
       try {
         await Preferences.set({ key: 'token', value: token });
       } catch (prefErr) {
-        console.warn('[Auth Login] Failed to save token to Preferences:', prefErr);
+        console.warn('[Recovery] Failed to save token to Preferences:', prefErr);
       }
 
-      // 3. Initialize or update local data store
+      // Preserve all existing local data while updating identity and authentication state
+      store.email = normalizedEmail;
+      store.localUserId = userId || localUserId;
+      store.isAuthenticated = true;
+      store.lastSync = new Date().toISOString();
+      if (!store.data.profile) {
+        store.data.profile = {};
+      }
+      store.data.profile.email = normalizedEmail;
+      store.data.profile.fullName = resFullName || fullName;
+      store.data.profile.userId = userId || localUserId;
+      store.data.profile.onboardingCompleted = true;
+
+      saveStoredData(store);
+      try {
+        await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
+      } catch (prefErr) {
+        console.warn('[Recovery] Failed to save store to Preferences:', prefErr);
+      }
+
+      const localProfile = buildUserProfile(store);
+      setUser(localProfile);
+
+      onProgress?.({
+        step: 5,
+        title: 'Migration completed',
+        detail: 'All financial data is safely recovered and synchronized.'
+      });
+
+      return localProfile;
+    } finally {
+      window.__isLoggingIn = false;
+    }
+  };
+
+  const login = async (email, password, onProgress = null) => {
+    window.__isLoggingIn = true;
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Ensure safety snapshot before any login attempt
+      await createLocalDataBackup();
+
       const store = getStoredData();
-      const isDifferentEmail = store.email && store.email.toLowerCase() !== normalizedEmail;
-      if (isDifferentEmail) {
-        store.localUserId = userId || generateUUID();
-        store.email = normalizedEmail;
-        store.lastSync = null;
-        store.data = {
-          profile: {
-            fullName: fullName || normalizedEmail.split('@')[0],
-            email: normalizedEmail,
-            userId: userId || store.localUserId,
-            onboardingCompleted: true
-          },
-          accounts: [
-            {
-              id: generateUUID(),
-              accountName: "Cash",
-              accountType: "SYSTEM",
-              locked: true,
-              currentBalance: 0,
-              deleted: false
-            }
-          ],
-          expenses: [],
-          incomes: [],
-          reminders: [],
-          transfers: [],
-          settings: {
-            dailyReminderConfig: { enabled: false, reminderTime: '21:00', reminderZoneId: 'UTC' }
-          }
-        };
-      } else {
+      const hasData = hasLocalFinancialData(store);
+
+      // 1. Authenticate against the backend API
+      try {
+        if (hasData && onProgress) {
+          onProgress({
+            step: 2,
+            title: 'Cloud account checked',
+            detail: 'Authenticating with cloud database...'
+          });
+        }
+
+        const response = await api.post('/api/auth/login', {
+          email: normalizedEmail,
+          password: password
+        });
+
+        const { token, userId, fullName } = response.data || {};
+        if (!token) {
+          throw new Error('Authentication failed: No token received from server');
+        }
+
+        // Persist token in localStorage and Capacitor Preferences
+        localStorage.setItem('token', token);
+        try {
+          await Preferences.set({ key: 'token', value: token });
+        } catch (prefErr) {
+          console.warn('[Auth Login] Failed to save token to Preferences:', prefErr);
+        }
+
+        // If local data exists, preserve it completely
         store.email = normalizedEmail;
         if (userId) store.localUserId = userId;
         if (!store.data.profile) {
@@ -240,48 +372,66 @@ export const AuthProvider = ({ children }) => {
         store.data.profile.fullName = fullName || store.data.profile.fullName || normalizedEmail.split('@')[0];
         if (userId) store.data.profile.userId = userId;
         store.data.profile.onboardingCompleted = true;
-      }
-      
-      store.isAuthenticated = true;
-      saveStoredData(store);
-      try {
-        await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
-      } catch (prefErr) {
-        console.warn('[Auth Login] Failed to save store to Preferences:', prefErr);
-      }
-      
-      const localProfile = buildUserProfile(store);
-      setUser(localProfile);
+        store.isAuthenticated = true;
 
-      // Try pulling backup from server if online
-      if (navigator.onLine) {
+        saveStoredData(store);
         try {
-          const syncPullRes = await api.get(`/sync/pull?email=${encodeURIComponent(normalizedEmail)}`);
-          if (syncPullRes.status === 200 && syncPullRes.data) {
-            await restoreDbFromBackup(syncPullRes.data);
-            const updatedStore = getStoredData();
-            setUser(buildUserProfile(updatedStore));
-          }
-        } catch (pullErr) {
-          console.warn('[Auth Login] Failed to pull user backup or user has no backup yet:', pullErr);
+          await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
+        } catch (prefErr) {
+          console.warn('[Auth Login] Failed to save store to Preferences:', prefErr);
         }
+
+        const localProfile = buildUserProfile(store);
+        setUser(localProfile);
+
+        if (hasData && onProgress) {
+          onProgress({
+            step: 5,
+            title: 'Migration completed',
+            detail: 'Welcome back! Session successfully established.'
+          });
+        }
+
+        // If user has local data that was never backed up to cloud, trigger sync
+        setTimeout(() => {
+          sync();
+        }, 300);
+
+        return localProfile;
+      } catch (loginErr) {
+        // If login failed because the account was not found in Neon cloud (userNotFound: true),
+        // and we have local financial data on this device, automatically recover and sync!
+        const isUserNotFound = loginErr.response?.data?.userNotFound === true;
+        if (isUserNotFound && hasData) {
+          console.info('[Auth Login] User not found in Neon cloud but local financial data exists. Initiating automatic recovery and sync...');
+          return await recoverAndSyncLocalAccount(normalizedEmail, password, onProgress);
+        }
+
+        // If it's a genuine password mismatch for an existing account, rethrow
+        throw loginErr;
       }
-
-      // Trigger background sync
-      setTimeout(() => {
-        sync();
-      }, 100);
-
-      return localProfile;
     } finally {
       window.__isLoggingIn = false;
     }
   };
 
-  const register = async (fullName, email, password) => {
+  const register = async (fullName, email, password, onProgress = null) => {
     window.__isLoggingIn = true;
     try {
       const normalizedEmail = email.trim().toLowerCase();
+
+      // Ensure safety snapshot before registration
+      await createLocalDataBackup();
+
+      const store = getStoredData();
+      const hasData = hasLocalFinancialData(store);
+
+      // If local financial data already exists on this device, recover and sync it
+      // so existing records are uploaded to Neon rather than creating an empty account
+      if (hasData) {
+        console.info('[Auth Register] Local financial data detected during registration. Recovering and syncing local records to cloud account...');
+        return await recoverAndSyncLocalAccount(normalizedEmail, password, onProgress);
+      }
 
       // 1. Register with the backend API
       const response = await api.post('/api/auth/register', {
@@ -304,7 +454,6 @@ export const AuthProvider = ({ children }) => {
       }
 
       // 3. Save details locally and set isAuthenticated to true
-      const store = getStoredData();
       store.localUserId = userId || generateUUID();
       store.email = normalizedEmail;
       store.isAuthenticated = true;
@@ -360,7 +509,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      login,
+      register,
+      recoverAndSyncLocalAccount,
+      createLocalDataBackup,
+      hasLocalFinancialData,
+      logout,
+      refreshUser
+    }}>
       {children}
     </AuthContext.Provider>
   );

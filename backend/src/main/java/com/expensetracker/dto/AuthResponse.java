@@ -18,4 +18,6 @@ public class AuthResponse {
     private String fullName;
     private Boolean onboardingCompleted;
     private String avatar;
+    private String message;
+    private java.util.Map<String, Integer> syncedCounts;
 }
