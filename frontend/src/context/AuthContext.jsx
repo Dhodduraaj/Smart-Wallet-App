@@ -7,6 +7,28 @@ import { Preferences } from '@capacitor/preferences';
 
 const AuthContext = createContext(null);
 
+export const isJwtTokenExpired = (token) => {
+  if (!token || typeof token !== 'string') return true;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      (typeof atob === 'function' ? atob(base64) : Buffer.from(base64, 'base64').toString('binary'))
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    const decoded = JSON.parse(jsonPayload);
+    if (!decoded || typeof decoded.exp !== 'number') return false;
+    return (Date.now() / 1000) >= decoded.exp;
+  } catch (err) {
+    console.warn('[Auth] Failed to decode JWT token for expiry check:', err);
+    return false;
+  }
+};
+
 export const hasLocalFinancialData = (store) => {
   if (!store || !store.data) return false;
   const d = store.data;
@@ -115,83 +137,88 @@ export const AuthProvider = ({ children }) => {
 
         // 5. Check authentication state & validate session
         if (store && store.isAuthenticated === true && store.data && store.data.profile) {
-          if (token && navigator.onLine) {
+          // Verify JWT expiry locally without blocking app startup
+          if (token && isJwtTokenExpired(token)) {
+            console.warn('[Auth Bootstrap] Token expired based on JWT claims. Logging out.');
+            localStorage.removeItem('token');
+            try { await Preferences.remove({ key: 'token' }); } catch {}
+            store.isAuthenticated = false;
+            saveStoredData(store);
             try {
-              // Validate session with backend
-              const meRes = await api.get('/api/auth/me');
-              if (meRes.data) {
-                if (meRes.data.userId) store.localUserId = meRes.data.userId;
-                if (store.data.profile) {
-                  store.data.profile.userId = meRes.data.userId || store.data.profile.userId;
-                  if (meRes.data.fullName) store.data.profile.fullName = meRes.data.fullName;
+              await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
+            } catch {}
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+
+          // Restore session INSTANTLY from local storage (<10ms)
+          const userProfile = buildUserProfile(store);
+          setUser(userProfile);
+          setLoading(false);
+
+          // Non-blocking fire-and-forget background verification only if online
+          if (token && navigator.onLine) {
+            api.get('/api/auth/me').then(meRes => {
+              if (meRes?.data) {
+                const freshStore = getStoredData();
+                if (meRes.data.userId) freshStore.localUserId = meRes.data.userId;
+                if (freshStore.data?.profile) {
+                  freshStore.data.profile.userId = meRes.data.userId || freshStore.data.profile.userId;
+                  if (meRes.data.fullName) freshStore.data.profile.fullName = meRes.data.fullName;
                 }
-                saveStoredData(store);
+                saveStoredData(freshStore);
               }
-              const userProfile = buildUserProfile(store);
-              setUser(userProfile);
-            } catch (authErr) {
+            }).catch(authErr => {
               if (authErr.response?.status === 401) {
-                // Token is revoked or expired - invalidate session
-                console.warn('[Auth Bootstrap] Token expired or invalid on backend (401), logging out:', authErr);
+                console.warn('[Auth Background] Token rejected by backend (401). Logging out.');
                 localStorage.removeItem('token');
-                try { await Preferences.remove({ key: 'token' }); } catch {}
-                store.isAuthenticated = false;
-                saveStoredData(store);
-                try {
-                  await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
-                } catch {}
+                try { Preferences.remove({ key: 'token' }).catch(() => {}); } catch {}
+                const currentStore = getStoredData();
+                currentStore.isAuthenticated = false;
+                saveStoredData(currentStore);
                 setUser(null);
-                return;
-              } else {
-                // Server cold starting / network glitch - retain local session
-                console.warn('[Auth Bootstrap] Backend unreachable or cold starting, maintaining local session:', authErr);
-                setUser(buildUserProfile(store));
               }
-            }
-          } else {
-            // Offline mode or active local session - restore user
-            const userProfile = buildUserProfile(store);
-            setUser(userProfile);
+            });
           }
 
           // Ensure native Preferences also has the latest stored data
           try {
             await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
-          } catch {
-            // ignore
-          }
+          } catch {}
+          return;
         } else {
           // If store is not authenticated, verify if Preferences had authenticated data
           if (prefStoredData) {
             try {
               const parsedPref = JSON.parse(prefStoredData);
               if (parsedPref && parsedPref.isAuthenticated === true && parsedPref.data && parsedPref.data.profile) {
-                localStorage.setItem('smart_wallet_data', prefStoredData);
-                setUser(buildUserProfile(parsedPref));
+                if (!prefToken || !isJwtTokenExpired(prefToken)) {
+                  localStorage.setItem('smart_wallet_data', prefStoredData);
+                  setUser(buildUserProfile(parsedPref));
+                  setLoading(false);
+                  return;
+                }
+              }
+            } catch {}
+          }
+          // Robust fallback: inspect raw localStorage directly before defaulting to unauthenticated
+          try {
+            const raw = localStorage.getItem('smart_wallet_data');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && parsed.isAuthenticated === true && parsed.data && parsed.data.profile) {
+                setUser(buildUserProfile(parsed));
+                setLoading(false);
                 return;
               }
-            } catch {
-              // ignore
             }
-          }
+          } catch {}
           setUser(null);
+          setLoading(false);
         }
       } catch (err) {
         console.error('[Auth Bootstrap] Error in bootstrap:', err);
-        // Robust fallback: inspect raw localStorage directly before defaulting to unauthenticated
-        try {
-          const raw = localStorage.getItem('smart_wallet_data');
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && parsed.isAuthenticated === true && parsed.data && parsed.data.profile) {
-              setUser(buildUserProfile(parsed));
-              return;
-            }
-          }
-        } catch {
-          // ignore
-        }
-        setUser(null);
       } finally {
         setLoading(false);
       }

@@ -1283,4 +1283,318 @@ export async function deleteSelectedLocalPersonLedgerEntries(personId, entryIds)
   saveStoredData(store);
 }
 
+/**
+ * Safe Local-Cloud Merge Engine:
+ * Imports and merges cloud database financial records into local storage without
+ * destroying un-uploaded pending local changes or duplicating financial operations.
+ */
+export function mergeCloudDataIntoLocal(cloudPayload) {
+  if (!cloudPayload || typeof cloudPayload !== 'object') {
+    return { updatedCount: 0, deletedCount: 0 };
+  }
+
+  const store = getStoredData();
+  if (!store || !store.data) return { updatedCount: 0, deletedCount: 0 };
+
+  // Read local pending sync queue to protect locally unsynced changes
+  let queue = [];
+  try {
+    const rawQueue = localStorage.getItem('smart_wallet_sync_queue');
+    queue = rawQueue ? JSON.parse(rawQueue) : [];
+  } catch (err) {
+    queue = [];
+  }
+
+  const pendingOps = queue.filter(q => q.status === 'PENDING' || q.status === 'FAILED');
+
+  // Identify all entity IDs with pending local changes
+  const pendingExpenseIds = new Set(
+    pendingOps.filter(q => q.entityType === 'EXPENSE').map(q => String(q.entityId).trim().toLowerCase())
+  );
+  const pendingIncomeIds = new Set(
+    pendingOps.filter(q => q.entityType === 'INCOME').map(q => String(q.entityId).trim().toLowerCase())
+  );
+  const pendingAccountIds = new Set(
+    pendingOps.filter(q => q.entityType === 'ACCOUNT').map(q => String(q.entityId).trim().toLowerCase())
+  );
+  const pendingTransferIds = new Set(
+    pendingOps.filter(q => q.entityType === 'TRANSFER').map(q => String(q.entityId).trim().toLowerCase())
+  );
+  const pendingReminderIds = new Set(
+    pendingOps.filter(q => q.entityType === 'REMINDER').map(q => String(q.entityId).trim().toLowerCase())
+  );
+
+  let updatedCount = 0;
+  let deletedCount = 0;
+  const wasPreviouslySynced = !!store.lastSync;
+
+  // 1. MERGE ACCOUNTS & COMPUTE ATOMIC LIVE BALANCES
+  const rawCloudAccounts = Array.isArray(cloudPayload.accounts) ? cloudPayload.accounts : [];
+  if (rawCloudAccounts.length > 0) {
+    const localAccounts = store.data.accounts || [];
+
+    for (const cloudAcc of rawCloudAccounts) {
+      const cloudAccId = String(cloudAcc.id).trim().toLowerCase();
+      // Start with authoritative cloud account balance
+      let balance = parseFloat(cloudAcc.currentBalance || 0);
+
+      // Adjust for this device's own pending offline operations that have not yet reached the cloud
+      pendingOps.forEach(op => {
+        if (op.entityType === 'EXPENSE' && op.payload) {
+          const expAccId = String(op.payload.accountId).trim().toLowerCase();
+          if (expAccId === cloudAccId || (op.payload.accountName && cloudAcc.accountName && op.payload.accountName.toLowerCase() === cloudAcc.accountName.toLowerCase())) {
+            balance -= parseFloat(op.payload.amount || 0);
+          }
+        } else if (op.entityType === 'INCOME' && op.payload) {
+          const incAccId = String(op.payload.accountId).trim().toLowerCase();
+          if (incAccId === cloudAccId || (op.payload.accountName && cloudAcc.accountName && op.payload.accountName.toLowerCase() === cloudAcc.accountName.toLowerCase())) {
+            balance += parseFloat(op.payload.amount || 0);
+          }
+        } else if (op.entityType === 'TRANSFER' && op.payload) {
+          const fromId = String(op.payload.fromAccountId).trim().toLowerCase();
+          const toId = String(op.payload.toAccountId).trim().toLowerCase();
+          if (fromId === cloudAccId) {
+            balance -= parseFloat(op.payload.amount || 0);
+          }
+          if (toId === cloudAccId) {
+            balance += parseFloat(op.payload.amount || 0);
+          }
+        }
+      });
+
+      const existingIdx = localAccounts.findIndex(a => 
+        String(a.id).trim().toLowerCase() === cloudAccId ||
+        (a.accountName && cloudAcc.accountName && a.accountName.trim().toLowerCase() === cloudAcc.accountName.trim().toLowerCase())
+      );
+
+      if (existingIdx !== -1) {
+        if (!pendingAccountIds.has(String(localAccounts[existingIdx].id).trim().toLowerCase())) {
+          localAccounts[existingIdx] = {
+            ...localAccounts[existingIdx],
+            ...cloudAcc,
+            currentBalance: balance,
+            deleted: false
+          };
+          updatedCount++;
+        }
+      } else {
+        localAccounts.push({
+          ...cloudAcc,
+          currentBalance: balance,
+          deleted: false
+        });
+        updatedCount++;
+      }
+    }
+    store.data.accounts = localAccounts;
+  }
+
+  // 2. MERGE EXPENSES
+  let cloudExpenses = Array.isArray(cloudPayload.expenses) ? cloudPayload.expenses : [];
+  if (cloudExpenses.length === 0 && Array.isArray(cloudPayload.transactions)) {
+    cloudExpenses = cloudPayload.transactions.filter(t => t.transactionType === 'expense' || t.type === 'expense');
+  }
+
+  if (Array.isArray(cloudExpenses)) {
+    const localExpenses = store.data.expenses || [];
+    const cloudExpMap = new Map();
+    cloudExpenses.forEach(exp => {
+      if (exp && exp.id) {
+        cloudExpMap.set(String(exp.id).trim().toLowerCase(), exp);
+      }
+    });
+
+    // Update or insert cloud expenses
+    for (const [cloudId, cloudExp] of cloudExpMap.entries()) {
+      const localIdx = localExpenses.findIndex(e => String(e.id).trim().toLowerCase() === cloudId);
+      if (localIdx !== -1) {
+        if (!pendingExpenseIds.has(cloudId)) {
+          localExpenses[localIdx] = {
+            ...localExpenses[localIdx],
+            ...cloudExp,
+            deleted: false
+          };
+          updatedCount++;
+        }
+      } else {
+        localExpenses.push({
+          ...cloudExp,
+          deleted: false
+        });
+        updatedCount++;
+      }
+    }
+
+    // Handle deletions: if local expense is not in cloud and not pending on this device, propagate deletion
+    const retainedExpenses = [];
+    for (const localExp of localExpenses) {
+      const localId = String(localExp.id).trim().toLowerCase();
+      if (cloudExpMap.has(localId)) {
+        retainedExpenses.push(localExp);
+      } else if (pendingExpenseIds.has(localId)) {
+        // Keep unsynced local transaction!
+        retainedExpenses.push(localExp);
+      } else if (!wasPreviouslySynced) {
+        // First sync on device, keep existing
+        retainedExpenses.push(localExp);
+      } else {
+        // Deleted in cloud
+        deletedCount++;
+      }
+    }
+    store.data.expenses = retainedExpenses;
+  }
+
+  // 3. MERGE INCOMES
+  let cloudIncomes = Array.isArray(cloudPayload.incomes) ? cloudPayload.incomes : [];
+  if (cloudIncomes.length === 0 && Array.isArray(cloudPayload.transactions)) {
+    cloudIncomes = cloudPayload.transactions.filter(t => t.transactionType === 'income' || t.type === 'income');
+  }
+
+  if (Array.isArray(cloudIncomes)) {
+    const localIncomes = store.data.incomes || [];
+    const cloudIncMap = new Map();
+    cloudIncomes.forEach(inc => {
+      if (inc && inc.id) {
+        cloudIncMap.set(String(inc.id).trim().toLowerCase(), inc);
+      }
+    });
+
+    for (const [cloudId, cloudInc] of cloudIncMap.entries()) {
+      const localIdx = localIncomes.findIndex(i => String(i.id).trim().toLowerCase() === cloudId);
+      if (localIdx !== -1) {
+        if (!pendingIncomeIds.has(cloudId)) {
+          localIncomes[localIdx] = {
+            ...localIncomes[localIdx],
+            ...cloudInc,
+            deleted: false
+          };
+          updatedCount++;
+        }
+      } else {
+        localIncomes.push({
+          ...cloudInc,
+          deleted: false
+        });
+        updatedCount++;
+      }
+    }
+
+    const retainedIncomes = [];
+    for (const localInc of localIncomes) {
+      const localId = String(localInc.id).trim().toLowerCase();
+      if (cloudIncMap.has(localId)) {
+        retainedIncomes.push(localInc);
+      } else if (pendingIncomeIds.has(localId)) {
+        retainedIncomes.push(localInc);
+      } else if (!wasPreviouslySynced) {
+        retainedIncomes.push(localInc);
+      } else {
+        deletedCount++;
+      }
+    }
+    store.data.incomes = retainedIncomes;
+  }
+
+  // 4. MERGE REMINDERS
+  if (Array.isArray(cloudPayload.reminders)) {
+    const localReminders = store.data.reminders || [];
+    const cloudRemMap = new Map();
+    cloudPayload.reminders.forEach(r => {
+      if (r && r.id) cloudRemMap.set(String(r.id).trim().toLowerCase(), r);
+    });
+
+    for (const [cloudId, cloudRem] of cloudRemMap.entries()) {
+      const localIdx = localReminders.findIndex(r => String(r.id).trim().toLowerCase() === cloudId);
+      if (localIdx !== -1) {
+        if (!pendingReminderIds.has(cloudId)) {
+          localReminders[localIdx] = { ...localReminders[localIdx], ...cloudRem };
+        }
+      } else {
+        localReminders.push(cloudRem);
+      }
+    }
+    store.data.reminders = localReminders;
+  }
+
+  // 5. MERGE TRANSFERS
+  if (Array.isArray(cloudPayload.transfers)) {
+    const localTransfers = store.data.transfers || [];
+    const cloudTrMap = new Map();
+    cloudPayload.transfers.forEach(t => {
+      if (t && t.id) cloudTrMap.set(String(t.id).trim().toLowerCase(), t);
+    });
+
+    for (const [cloudId, cloudTr] of cloudTrMap.entries()) {
+      const localIdx = localTransfers.findIndex(t => String(t.id).trim().toLowerCase() === cloudId);
+      if (localIdx !== -1) {
+        if (!pendingTransferIds.has(cloudId)) {
+          localTransfers[localIdx] = { ...localTransfers[localIdx], ...cloudTr };
+        }
+      } else {
+        localTransfers.push(cloudTr);
+      }
+    }
+    store.data.transfers = localTransfers;
+  }
+
+  // 6. MERGE PEOPLE & LEDGER
+  if (Array.isArray(cloudPayload.people)) {
+    const localPeople = store.data.people || [];
+    const cloudPMap = new Map();
+    cloudPayload.people.forEach(p => {
+      if (p && p.id) cloudPMap.set(String(p.id).trim().toLowerCase(), p);
+    });
+    for (const [cloudId, cloudP] of cloudPMap.entries()) {
+      const localIdx = localPeople.findIndex(p => String(p.id).trim().toLowerCase() === cloudId);
+      if (localIdx !== -1) {
+        localPeople[localIdx] = { ...localPeople[localIdx], ...cloudP };
+      } else {
+        localPeople.push(cloudP);
+      }
+    }
+    store.data.people = localPeople;
+  }
+
+  if (Array.isArray(cloudPayload.peopleLedger)) {
+    const localLedger = store.data.peopleLedger || [];
+    const cloudLMap = new Map();
+    cloudPayload.peopleLedger.forEach(l => {
+      if (l && l.id) cloudLMap.set(String(l.id).trim().toLowerCase(), l);
+    });
+    for (const [cloudId, cloudL] of cloudLMap.entries()) {
+      const localIdx = localLedger.findIndex(l => String(l.id).trim().toLowerCase() === cloudId);
+      if (localIdx !== -1) {
+        localLedger[localIdx] = { ...localLedger[localIdx], ...cloudL };
+      } else {
+        localLedger.push(cloudL);
+      }
+    }
+    store.data.peopleLedger = localLedger;
+  }
+
+  // 7. MERGE PROFILE
+  if (cloudPayload.profile && typeof cloudPayload.profile === 'object') {
+    store.data.profile = {
+      ...(store.data.profile || {}),
+      ...cloudPayload.profile
+    };
+  }
+
+  store.lastSync = new Date().toISOString();
+  saveStoredData(store);
+
+  try {
+    Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) }).catch(() => {});
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
+    window.dispatchEvent(new CustomEvent('sync-completed'));
+  }
+
+  return { updatedCount, deletedCount };
+}
+
+
 

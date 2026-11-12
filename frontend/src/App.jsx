@@ -211,30 +211,27 @@ const AppRoutes = ({ darkMode, toggleDarkMode }) => {
 };
 
 const SyncManager = () => {
-  const { user } = useAuth();
-
   useEffect(() => {
-    if (!user) return;
-
-    // Initial sync
-    sync();
-
-    // Periodic sync every 30 seconds
-    const interval = setInterval(() => {
-      sync();
-    }, 30000);
-
-    // Sync on network reconnect
+    // Routine app startup is 100% local-first and never triggers blocking cloud requests.
+    // Listen for online/offline events to broadcast network status to UI indicators.
     const handleOnline = () => {
-      sync();
+      window.dispatchEvent(new CustomEvent('sync-status-changed', {
+        detail: { isOnline: true }
+      }));
+    };
+    const handleOffline = () => {
+      window.dispatchEvent(new CustomEvent('sync-status-changed', {
+        detail: { isOnline: false }
+      }));
     };
     window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
-  }, [user]);
+  }, []);
 
   return null;
 };

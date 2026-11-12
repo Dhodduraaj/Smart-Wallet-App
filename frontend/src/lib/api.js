@@ -6,6 +6,7 @@ import { sync } from './sync';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8081',
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -111,7 +112,6 @@ const customOfflineAdapter = async (config) => {
     if (cleanUrl.endsWith('/api/accounts')) {
       if (method === 'GET') {
         const accounts = await localDb.getLocalAccounts();
-        setTimeout(() => sync(), 100);
         return mockResponse(accounts);
       }
       if (method === 'POST') {
@@ -147,7 +147,6 @@ const customOfflineAdapter = async (config) => {
     if (cleanUrl.endsWith('/api/expenses')) {
       if (method === 'GET') {
         const res = await localDb.getLocalExpenses(queryParams);
-        setTimeout(() => sync(), 100);
         return mockResponse(res);
       }
       if (method === 'POST') {
@@ -183,7 +182,6 @@ const customOfflineAdapter = async (config) => {
     if (cleanUrl.endsWith('/api/incomes')) {
       if (method === 'GET') {
         const res = await localDb.getLocalIncomes(queryParams);
-        setTimeout(() => sync(), 100);
         return mockResponse(res);
       }
       if (method === 'POST') {
@@ -232,7 +230,6 @@ const customOfflineAdapter = async (config) => {
     if (cleanUrl.endsWith('/api/reminders/upcoming')) {
       if (method === 'GET') {
         const res = await localDb.getLocalUpcomingPayments();
-        setTimeout(() => sync(), 100);
         return mockResponse(res);
       }
       if (method === 'POST') {
@@ -271,7 +268,6 @@ const customOfflineAdapter = async (config) => {
     // 7. Dashboard statistics
     if (cleanUrl.endsWith('/api/dashboard/summary') && method === 'GET') {
       const summary = await localDb.getLocalDashboardSummary();
-      setTimeout(() => sync(), 100);
       return mockResponse(summary);
     }
 

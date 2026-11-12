@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import SyncStatusIndicator from './SyncStatusIndicator';
+import CloudSyncControls from './CloudSyncControls';
 import {
   Drawer,
   List,
@@ -101,7 +101,7 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
           </Typography>
         </Box>
         <Box sx={{ mt: 0.5, pl: 0.5 }}>
-          <SyncStatusIndicator />
+          <CloudSyncControls compact={false} />
         </Box>
       </Toolbar>
 

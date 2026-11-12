@@ -5,6 +5,8 @@ import com.expensetracker.entity.User;
 import com.expensetracker.entity.UserBackup;
 import com.expensetracker.repository.UserRepository;
 import com.expensetracker.repository.UserBackupRepository;
+import com.expensetracker.repository.UserRepository;
+import com.expensetracker.security.JwtTokenProvider;
 import com.expensetracker.service.AccountRecoveryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,9 +27,21 @@ public class SyncController {
     private final UserRepository userRepository;
     private final UserBackupRepository userBackupRepository;
     private final AccountRecoveryService accountRecoveryService;
+    private final JwtTokenProvider tokenProvider;
 
     @PostMapping("/batch")
-    public ResponseEntity<?> batchSync(@RequestBody BatchSyncRequest request) {
+    public ResponseEntity<?> batchSync(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody BatchSyncRequest request) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            if (tokenProvider.validateToken(token)) {
+                UUID authenticatedId = tokenProvider.getUserIdFromJWT(token);
+                if (authenticatedId != null && request != null) {
+                    request.setUserId(authenticatedId);
+                }
+            }
+        }
         log.info("Received batch sync request for user: {}", request != null ? request.getUserId() : "null");
         return accountRecoveryService.processBatchSync(request);
     }
@@ -160,12 +174,30 @@ public class SyncController {
     }
 
     @GetMapping("/pull")
-    public ResponseEntity<?> pull(@RequestParam(required = false) String email,
+    public ResponseEntity<?> pull(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestParam(required = false) String email,
             @RequestParam(required = false) String userId) {
         log.info("Received pull request: email={}, userId={}", email, userId);
         UUID targetUserId = null;
 
-        if (userId != null && !userId.trim().isEmpty()) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String token = authHeader.substring(7);
+                if (tokenProvider.validateToken(token)) {
+                    targetUserId = tokenProvider.getUserIdFromJWT(token);
+                    if (targetUserId == null) {
+                        String emailFromToken = tokenProvider.getEmailFromJWT(token);
+                        if (emailFromToken != null) {
+                            Optional<User> u = userRepository.findByEmail(emailFromToken.trim().toLowerCase());
+                            if (u.isPresent()) targetUserId = u.get().getId();
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (targetUserId == null && userId != null && !userId.trim().isEmpty()) {
             try {
                 targetUserId = UUID.fromString(userId.trim());
             } catch (Exception ignored) {}

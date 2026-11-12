@@ -9,7 +9,7 @@ import {
 } from '@mui/icons-material';
 import { getSyncStatus, processQueue } from '../lib/syncQueue';
 
-export default function SyncStatusIndicator({ compact = false }) {
+export default function SyncStatusIndicator({ compact = false, isUploading = false, isDownloading = false }) {
   const [syncInfo, setSyncInfo] = useState(getSyncStatus());
   const [isManualSyncing, setIsManualSyncing] = useState(false);
 
@@ -26,7 +26,7 @@ export default function SyncStatusIndicator({ compact = false }) {
 
   const handleManualSync = async (e) => {
     e.stopPropagation();
-    if (syncInfo.status === 'SYNCING' || isManualSyncing) return;
+    if (syncInfo.status === 'SYNCING' || isManualSyncing || isUploading || isDownloading) return;
     setIsManualSyncing(true);
     try {
       await processQueue();
@@ -36,6 +36,24 @@ export default function SyncStatusIndicator({ compact = false }) {
   };
 
   const getStatusConfig = () => {
+    if (isUploading || syncInfo.status === 'UPLOADING') {
+      return {
+        label: 'Uploading...',
+        color: 'info',
+        icon: <CircularProgress size={12} color="inherit" />,
+        tooltip: 'Uploading local changes to cloud database...',
+        clickable: false,
+      };
+    }
+    if (isDownloading || syncInfo.status === 'DOWNLOADING') {
+      return {
+        label: 'Downloading...',
+        color: 'info',
+        icon: <CircularProgress size={12} color="inherit" />,
+        tooltip: 'Downloading latest changes from cloud database...',
+        clickable: false,
+      };
+    }
     const isSyncing = syncInfo.status === 'SYNCING' || isManualSyncing;
     if (!syncInfo.isOnline || syncInfo.status === 'OFFLINE') {
       return {

@@ -363,16 +363,9 @@ export async function processQueue() {
 // Background event hooks for auto-sync
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    scheduleProcess(500);
+    const queue = getStoredQueue();
+    if (queue.some(q => q.status === 'PENDING' || q.status === 'FAILED')) {
+      scheduleProcess(2000);
+    }
   });
-  window.addEventListener('focus', () => {
-    scheduleProcess(1000);
-  });
-  if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        scheduleProcess(1000);
-      }
-    });
-  }
 }

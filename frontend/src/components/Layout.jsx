@@ -23,7 +23,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import Sidebar from './Sidebar';
 import SelfTransferDialog from './SelfTransferDialog';
-import SyncStatusIndicator from './SyncStatusIndicator';
+import CloudSyncControls from './CloudSyncControls';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import {
   DashboardOutlined,
@@ -183,8 +183,8 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
                 </Typography>
               </Box>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <SyncStatusIndicator compact={false} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <CloudSyncControls compact={false} />
               {isAndroidApk && (
                 <Tooltip title="Exit app">
                   <IconButton
