@@ -13,8 +13,19 @@ const api = axios.create({
 
 let isLoggingOut = false;
 
-// Custom Offline-First Axios Adapter
-const defaultAdapter = axios.defaults.adapter;
+// Resolve the default network adapter for Axios (compatible with both Axios 0.x and 1.x+)
+const getDefaultNetworkAdapter = () => {
+  if (typeof axios.getAdapter === 'function') {
+    try {
+      const adapter = axios.getAdapter(axios.defaults.adapter);
+      if (typeof adapter === 'function') return adapter;
+    } catch {}
+  }
+  if (typeof axios.defaults.adapter === 'function') {
+    return axios.defaults.adapter;
+  }
+  return null;
+};
 
 const customOfflineAdapter = async (config) => {
   const url = config.url || '';
@@ -404,16 +415,17 @@ const customOfflineAdapter = async (config) => {
   }
 
   // Fallback to network
-  // To prevent infinite recursion, we MUST remove this adapter from config before calling defaultAdapter!
+  // To prevent infinite recursion, we MUST remove this adapter from config before calling the network adapter!
   const netConfig = { ...config };
   delete netConfig.adapter;
 
-  if (typeof defaultAdapter === 'function') {
-    return defaultAdapter(netConfig);
-  } else if (Array.isArray(defaultAdapter)) {
-    return defaultAdapter[0](netConfig);
+  const defaultAdapterFn = getDefaultNetworkAdapter();
+  if (typeof defaultAdapterFn === 'function') {
+    return defaultAdapterFn(netConfig);
   }
-  return axios.defaults.adapter(netConfig);
+
+  // Final fallback using standard Axios
+  return axios(netConfig);
 };
 
 // Request interceptor to add the JWT token and custom adapter
