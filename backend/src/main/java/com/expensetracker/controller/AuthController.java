@@ -120,6 +120,12 @@ public class AuthController {
                 .build());
     }
 
+    @PostMapping("/recover-account")
+    @Operation(summary = "Fast recover local offline account and establish session immediately")
+    public ResponseEntity<?> recoverAccount(@RequestBody AccountRecoveryRequest request) {
+        return accountRecoveryService.recoverAccountOnly(request);
+    }
+
     @PostMapping("/recover-and-sync")
     @Operation(summary = "Recover local offline account and synchronize with Neon cloud")
     public ResponseEntity<?> recoverAndSync(@RequestBody AccountRecoveryRequest request) {

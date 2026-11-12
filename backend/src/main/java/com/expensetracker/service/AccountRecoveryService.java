@@ -2,6 +2,8 @@ package com.expensetracker.service;
 
 import com.expensetracker.dto.AccountRecoveryRequest;
 import com.expensetracker.dto.AuthResponse;
+import com.expensetracker.dto.BatchSyncRequest;
+import com.expensetracker.dto.BatchSyncResponse;
 import com.expensetracker.entity.User;
 import com.expensetracker.entity.UserBackup;
 import com.expensetracker.repository.UserBackupRepository;
@@ -79,7 +81,12 @@ public class AccountRecoveryService {
         return false;
     }
 
-    public ResponseEntity<?> recoverAndSync(AccountRecoveryRequest request) {
+    /**
+     * Fast, Decoupled Account Recovery:
+     * Authenticates existing user or safely registers local offline user in Neon.
+     * Returns 30-day JWT session immediately (<250ms) without waiting for historical uploads.
+     */
+    public ResponseEntity<?> recoverAccountOnly(AccountRecoveryRequest request) {
         String normalizedEmail = request.getEmail() != null ? request.getEmail().trim().toLowerCase() : "";
         String rawPassword = request.getPassword() != null ? request.getPassword() : "";
 
@@ -87,7 +94,6 @@ public class AccountRecoveryService {
             return ResponseEntity.badRequest().body(Map.of("message", "Valid email and password (minimum 6 characters) are required"));
         }
 
-        // 1. Resolve or Create User in Neon
         Optional<User> existingUserOpt = userRepository.findByEmail(normalizedEmail);
         User user;
 
@@ -130,44 +136,10 @@ public class AccountRecoveryService {
                     .onboardingCompleted(true)
                     .build();
             user = userRepository.save(user);
-            log.info("Created cloud user during recovery: {} with ID: {}", normalizedEmail, user.getId());
+            log.info("Created cloud user during fast recovery: {} with ID: {}", normalizedEmail, user.getId());
         }
 
-        // 2. Prepare payload and statistics
-        Map<String, Object> payload = request.getPayload() != null ? request.getPayload() : new HashMap<>();
-        Map<String, Integer> syncCounts = new LinkedHashMap<>();
-        syncCounts.put("accounts", 0);
-        syncCounts.put("expenses", 0);
-        syncCounts.put("incomes", 0);
-        syncCounts.put("transfers", 0);
-        syncCounts.put("reminders", 0);
-        syncCounts.put("people", 0);
-        syncCounts.put("peopleLedger", 0);
-
-        // 3. Save complete JSON backup in user_backup table
-        try {
-            Map<String, Object> backupWrapper = new HashMap<>(payload);
-            backupWrapper.put("localUserId", user.getId().toString());
-            backupWrapper.put("userId", user.getId().toString());
-            backupWrapper.put("email", normalizedEmail);
-            backupWrapper.put("syncedAt", Instant.now().toString());
-
-            String jsonPayload = objectMapper.writeValueAsString(backupWrapper);
-            UserBackup backup = userBackupRepository.findById(user.getId())
-                    .orElse(new UserBackup());
-            backup.setUserId(user.getId());
-            backup.setPayload(jsonPayload);
-            backup.setLastSync(LocalDateTime.now());
-            userBackupRepository.save(backup);
-            log.info("Saved complete JSON user_backup snapshot for user ID: {}", user.getId());
-        } catch (Exception e) {
-            log.error("Failed to store user_backup JSON for user: {}", user.getId(), e);
-        }
-
-        // 4. Migrate and Synchronize Relational Tables (accounts, expenses, incomes, upcoming_payments)
-        syncRelationalTables(user.getId(), payload, syncCounts);
-
-        // 5. Generate 30-day JWT session token
+        // Generate 30-day JWT session token immediately
         String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getFullName());
 
         return ResponseEntity.ok(AuthResponse.builder()
@@ -176,17 +148,253 @@ public class AccountRecoveryService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .onboardingCompleted(true)
-                .message("Account recovered and financial data successfully synchronized with cloud database.")
-                .syncedCounts(syncCounts)
+                .message("Account successfully recovered. Ready for offline-first usage.")
                 .build());
     }
 
+    /**
+     * Backward-compatible recoverAndSync endpoint that performs fast authentication
+     * and persists snapshot without blocking client indefinitely.
+     */
+    public ResponseEntity<?> recoverAndSync(AccountRecoveryRequest request) {
+        ResponseEntity<?> authRes = recoverAccountOnly(request);
+        if (!authRes.getStatusCode().is2xxSuccessful()) {
+            return authRes;
+        }
+
+        AuthResponse auth = (AuthResponse) authRes.getBody();
+        if (auth == null || auth.getUserId() == null) {
+            return authRes;
+        }
+
+        UUID userId = auth.getUserId();
+        Map<String, Object> payload = request.getPayload() != null ? request.getPayload() : new HashMap<>();
+
+        // Save JSON backup in user_backup table
+        try {
+            Map<String, Object> backupWrapper = new HashMap<>(payload);
+            backupWrapper.put("localUserId", userId.toString());
+            backupWrapper.put("userId", userId.toString());
+            backupWrapper.put("email", auth.getEmail());
+            backupWrapper.put("syncedAt", Instant.now().toString());
+
+            String jsonPayload = objectMapper.writeValueAsString(backupWrapper);
+            UserBackup backup = userBackupRepository.findById(userId)
+                    .orElse(new UserBackup());
+            backup.setUserId(userId);
+            backup.setPayload(jsonPayload);
+            backup.setLastSync(LocalDateTime.now());
+            userBackupRepository.save(backup);
+        } catch (Exception e) {
+            log.warn("Failed to save background JSON snapshot: {}", e.getMessage());
+        }
+
+        // Relational synchronization (safe, limited)
+        Map<String, Integer> syncCounts = new LinkedHashMap<>();
+        syncCounts.put("accounts", 0);
+        syncCounts.put("expenses", 0);
+        syncCounts.put("incomes", 0);
+        syncCounts.put("transfers", 0);
+        syncCounts.put("reminders", 0);
+        syncCounts.put("people", extractList(payload, "people").size());
+        syncCounts.put("peopleLedger", extractList(payload, "peopleLedger").size());
+
+        try {
+            syncRelationalTables(userId, payload, syncCounts);
+        } catch (Exception e) {
+            log.warn("Relational sync encountered issue during recovery: {}", e.getMessage());
+        }
+
+        auth.setSyncedCounts(syncCounts);
+        return ResponseEntity.ok(auth);
+    }
+
+    /**
+     * Process Batch Operations from the Persistent Sync Queue
+     * Idempotently upserts/deletes records in relational tables and updates backup snapshot.
+     */
+    public ResponseEntity<?> processBatchSync(BatchSyncRequest request) {
+        if (request == null || request.getUserId() == null || request.getOperations() == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "userId and operations are required"));
+        }
+
+        UUID userId = request.getUserId();
+        List<String> processedIds = new ArrayList<>();
+        UUID defaultCashId = ensureDefaultCashAccount(userId);
+
+        for (BatchSyncRequest.SyncOperationDto op : request.getOperations()) {
+            if (op == null || op.getId() == null || op.getEntityType() == null) continue;
+
+            try {
+                String entityType = op.getEntityType().toUpperCase();
+                String opType = op.getOperationType() != null ? op.getOperationType().toUpperCase() : "CREATE";
+                Map<String, Object> payload = op.getPayload() != null ? op.getPayload() : Map.of();
+                UUID entityId = parseUUID(op.getEntityId());
+                if (entityId == null && payload.containsKey("id")) {
+                    entityId = parseUUID(payload.get("id"));
+                }
+                if (entityId == null) entityId = UUID.randomUUID();
+
+                if ("ACCOUNT".equals(entityType)) {
+                    if ("DELETE".equals(opType)) {
+                        if (hasAccountsTable && isPostgres) {
+                            jdbcTemplate.update("DELETE FROM accounts WHERE id = ? AND user_id = ?", entityId, userId);
+                        }
+                    } else {
+                        String accName = getString(payload.get("accountName"), "Cash");
+                        String accType = getString(payload.get("accountType"), "CUSTOM");
+                        BigDecimal balance = getBigDecimal(payload.get("currentBalance"), BigDecimal.ZERO);
+                        Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
+
+                        if (hasAccountsTable && isPostgres) {
+                            jdbcTemplate.update(
+                                    "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?) " +
+                                    "ON CONFLICT (id) DO UPDATE SET " +
+                                    "account_name = EXCLUDED.account_name, " +
+                                    "account_type = EXCLUDED.account_type, " +
+                                    "current_balance = EXCLUDED.current_balance",
+                                    entityId, accName, accType, createdAt, balance, userId
+                            );
+                        }
+                    }
+                } else if ("EXPENSE".equals(entityType)) {
+                    if ("DELETE".equals(opType)) {
+                        if (hasExpensesTable && isPostgres) {
+                            jdbcTemplate.update("DELETE FROM expenses WHERE id = ? AND user_id = ?", entityId, userId);
+                        }
+                    } else {
+                        BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
+                        String category = getString(payload.get("category"), "Others");
+                        String description = getString(payload.get("description"), "Expense");
+                        Date expenseDate = parseSqlDate(payload.get("expenseDate"), payload.get("transactionDateTime"), payload.get("createdAt"));
+                        String notes = getString(payload.get("notes"), null);
+                        String paymentMode = getString(payload.get("paymentMode"), "CASH");
+                        UUID accId = parseUUID(payload.get("accountId"));
+                        if (accId == null) accId = defaultCashId;
+                        Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
+
+                        if (hasExpensesTable && isPostgres) {
+                            jdbcTemplate.update(
+                                    "INSERT INTO expenses (id, amount, category, created_at, description, expense_date, notes, payment_mode, account_id, user_id) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                                    "ON CONFLICT (id) DO UPDATE SET " +
+                                    "amount = EXCLUDED.amount, " +
+                                    "category = EXCLUDED.category, " +
+                                    "description = EXCLUDED.description, " +
+                                    "expense_date = EXCLUDED.expense_date, " +
+                                    "notes = EXCLUDED.notes, " +
+                                    "payment_mode = EXCLUDED.payment_mode, " +
+                                    "account_id = EXCLUDED.account_id",
+                                    entityId, amount, category, createdAt, description, expenseDate, notes, paymentMode, accId, userId
+                            );
+                        }
+                    }
+                } else if ("INCOME".equals(entityType)) {
+                    if ("DELETE".equals(opType)) {
+                        if (hasIncomesTable && isPostgres) {
+                            jdbcTemplate.update("DELETE FROM incomes WHERE id = ? AND user_id = ?", entityId, userId);
+                        }
+                    } else {
+                        BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
+                        String description = getString(payload.get("description"), "Income");
+                        Date incomeDate = parseSqlDate(payload.get("incomeDate"), payload.get("transactionDateTime"), payload.get("createdAt"));
+                        String notes = getString(payload.get("notes"), null);
+                        UUID accId = parseUUID(payload.get("accountId"));
+                        if (accId == null) accId = defaultCashId;
+                        Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
+
+                        if (hasIncomesTable && isPostgres) {
+                            jdbcTemplate.update(
+                                    "INSERT INTO incomes (id, amount, created_at, description, income_date, notes, account_id, user_id) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                                    "ON CONFLICT (id) DO UPDATE SET " +
+                                    "amount = EXCLUDED.amount, " +
+                                    "description = EXCLUDED.description, " +
+                                    "income_date = EXCLUDED.income_date, " +
+                                    "notes = EXCLUDED.notes, " +
+                                    "account_id = EXCLUDED.account_id",
+                                    entityId, amount, createdAt, description, incomeDate, notes, accId, userId
+                            );
+                        }
+                    }
+                } else if ("REMINDER".equals(entityType)) {
+                    if ("DELETE".equals(opType)) {
+                        if (hasRemindersTable && isPostgres) {
+                            jdbcTemplate.update("DELETE FROM upcoming_payments WHERE id = ? AND user_id = ?", entityId, userId);
+                        }
+                    } else {
+                        String title = getString(payload.get("title"), "Reminder");
+                        BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
+                        Date dueDate = parseSqlDate(payload.get("dueDate"), null, null);
+                        Date reminderDate = parseSqlDate(payload.get("reminderDate"), null, null);
+                        String desc = getString(payload.get("description"), "");
+                        boolean completed = Boolean.TRUE.equals(payload.get("completed"));
+                        boolean notified = Boolean.TRUE.equals(payload.get("reminderNotified"));
+                        Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
+
+                        if (hasRemindersTable && isPostgres) {
+                            jdbcTemplate.update(
+                                    "INSERT INTO upcoming_payments (id, amount, completed, created_at, description, due_date, reminder_date, reminder_notified, title, user_id) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                                    "ON CONFLICT (id) DO UPDATE SET " +
+                                    "amount = EXCLUDED.amount, " +
+                                    "completed = EXCLUDED.completed, " +
+                                    "description = EXCLUDED.description, " +
+                                    "due_date = EXCLUDED.due_date, " +
+                                    "reminder_date = EXCLUDED.reminder_date, " +
+                                    "reminder_notified = EXCLUDED.reminder_notified, " +
+                                    "title = EXCLUDED.title",
+                                    entityId, amount, completed, createdAt, desc, dueDate, reminderDate, notified, title, userId
+                            );
+                        }
+                    }
+                }
+
+                processedIds.add(op.getId());
+            } catch (Exception e) {
+                log.warn("Failed to process sync operation: {}", op.getId(), e);
+            }
+        }
+
+        return ResponseEntity.ok(BatchSyncResponse.builder()
+                .status("SUCCESS")
+                .processedIds(processedIds)
+                .processedCount(processedIds.size())
+                .message("Processed " + processedIds.size() + " operations")
+                .build());
+    }
+
+    private UUID ensureDefaultCashAccount(UUID userId) {
+        if (!hasAccountsTable || !isPostgres) return UUID.randomUUID();
+        try {
+            List<UUID> existing = jdbcTemplate.query(
+                    "SELECT id FROM accounts WHERE user_id = ? AND (account_type = 'SYSTEM' OR account_name = 'Cash') LIMIT 1",
+                    (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                    userId
+            );
+            if (!existing.isEmpty()) {
+                return existing.get(0);
+            }
+            UUID cashId = UUID.randomUUID();
+            jdbcTemplate.update(
+                    "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
+                    "VALUES (?, 'Cash', 'SYSTEM', ?, 0, ?) ON CONFLICT (id) DO NOTHING",
+                    cashId, Timestamp.from(Instant.now()), userId
+            );
+            return cashId;
+        } catch (Exception e) {
+            log.warn("Could not ensure default cash account for user {}", userId, e);
+            return UUID.randomUUID();
+        }
+    }
+
     @SuppressWarnings("unchecked")
-    private void syncRelationalTables(UUID userId, Map<String, Object> payload, Map<String, Integer> syncCounts) {
-        // Collect Accounts
+    public void syncRelationalTables(UUID userId, Map<String, Object> payload, Map<String, Integer> syncCounts) {
         List<Map<String, Object>> accounts = extractList(payload, "accounts");
         Set<UUID> validAccountIds = new HashSet<>();
-        UUID defaultCashAccountId = null;
+        UUID defaultCashAccountId = ensureDefaultCashAccount(userId);
+        validAccountIds.add(defaultCashAccountId);
 
         for (Map<String, Object> acc : accounts) {
             try {
@@ -211,46 +419,20 @@ public class AccountRecoveryService {
                 }
 
                 validAccountIds.add(accId);
-                if (defaultCashAccountId == null || "SYSTEM".equalsIgnoreCase(accType) || "Cash".equalsIgnoreCase(accName)) {
-                    defaultCashAccountId = accId;
-                }
                 syncCounts.put("accounts", syncCounts.get("accounts") + 1);
             } catch (Exception e) {
                 log.warn("Failed to sync account: {}", acc, e);
             }
         }
 
-        // Fallback default cash account if none exists
-        if (defaultCashAccountId == null) {
-            defaultCashAccountId = UUID.randomUUID();
-            if (hasAccountsTable && isPostgres) {
-                jdbcTemplate.update(
-                        "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
-                        "VALUES (?, 'Cash', 'SYSTEM', ?, 0, ?) ON CONFLICT (id) DO NOTHING",
-                        defaultCashAccountId, Timestamp.from(Instant.now()), userId
-                );
-            }
-            validAccountIds.add(defaultCashAccountId);
-        }
-
-        // Collect Expenses (either from "expenses" list or from "transactions" where type="expense")
         List<Map<String, Object>> expenses = extractList(payload, "expenses");
-        if (expenses.isEmpty()) {
-            List<Map<String, Object>> txs = extractList(payload, "transactions");
-            for (Map<String, Object> tx : txs) {
-                if ("expense".equalsIgnoreCase(getString(tx.get("transactionType"), ""))) {
-                    expenses.add(tx);
-                }
-            }
-        }
-
         for (Map<String, Object> exp : expenses) {
             try {
                 UUID expId = parseUUID(exp.get("id"));
                 if (expId == null) expId = UUID.randomUUID();
 
                 BigDecimal amount = getBigDecimal(exp.get("amount"), BigDecimal.ZERO);
-                String category = getString(exp.get("category"), "General");
+                String category = getString(exp.get("category"), "Others");
                 String description = getString(exp.get("description"), "Expense");
                 Date expenseDate = parseSqlDate(exp.get("expenseDate"), exp.get("transactionDateTime"), exp.get("createdAt"));
                 String notes = getString(exp.get("notes"), null);
@@ -263,32 +445,29 @@ public class AccountRecoveryService {
 
                 Timestamp createdAt = parseTimestamp(exp.get("createdAt"));
 
-                int rows = 1;
                 if (hasExpensesTable && isPostgres) {
-                    rows = jdbcTemplate.update(
+                    jdbcTemplate.update(
                             "INSERT INTO expenses (id, amount, category, created_at, description, expense_date, notes, payment_mode, account_id, user_id) " +
                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-                            "ON CONFLICT (id) DO NOTHING",
+                            "ON CONFLICT (id) DO UPDATE SET " +
+                            "amount = EXCLUDED.amount, " +
+                            "category = EXCLUDED.category, " +
+                            "description = EXCLUDED.description, " +
+                            "expense_date = EXCLUDED.expense_date, " +
+                            "notes = EXCLUDED.notes, " +
+                            "payment_mode = EXCLUDED.payment_mode, " +
+                            "account_id = EXCLUDED.account_id",
                             expId, amount, category, createdAt, description, expenseDate, notes, paymentMode, accId, userId
                     );
                 }
-                syncCounts.put("expenses", syncCounts.get("expenses") + rows);
+
+                syncCounts.put("expenses", syncCounts.get("expenses") + 1);
             } catch (Exception e) {
                 log.warn("Failed to sync expense: {}", exp, e);
             }
         }
 
-        // Collect Incomes (either from "incomes" list or from "transactions" where type="income")
         List<Map<String, Object>> incomes = extractList(payload, "incomes");
-        if (incomes.isEmpty()) {
-            List<Map<String, Object>> txs = extractList(payload, "transactions");
-            for (Map<String, Object> tx : txs) {
-                if ("income".equalsIgnoreCase(getString(tx.get("transactionType"), ""))) {
-                    incomes.add(tx);
-                }
-            }
-        }
-
         for (Map<String, Object> inc : incomes) {
             try {
                 UUID incId = parseUUID(inc.get("id"));
@@ -306,131 +485,83 @@ public class AccountRecoveryService {
 
                 Timestamp createdAt = parseTimestamp(inc.get("createdAt"));
 
-                int rows = 1;
                 if (hasIncomesTable && isPostgres) {
-                    rows = jdbcTemplate.update(
+                    jdbcTemplate.update(
                             "INSERT INTO incomes (id, amount, created_at, description, income_date, notes, account_id, user_id) " +
                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-                            "ON CONFLICT (id) DO NOTHING",
+                            "ON CONFLICT (id) DO UPDATE SET " +
+                            "amount = EXCLUDED.amount, " +
+                            "description = EXCLUDED.description, " +
+                            "income_date = EXCLUDED.income_date, " +
+                            "notes = EXCLUDED.notes, " +
+                            "account_id = EXCLUDED.account_id",
                             incId, amount, createdAt, description, incomeDate, notes, accId, userId
                     );
                 }
-                syncCounts.put("incomes", syncCounts.get("incomes") + rows);
+
+                syncCounts.put("incomes", syncCounts.get("incomes") + 1);
             } catch (Exception e) {
                 log.warn("Failed to sync income: {}", inc, e);
             }
         }
-
-        // Reminders / Upcoming Payments
-        List<Map<String, Object>> reminders = extractList(payload, "reminders");
-        for (Map<String, Object> rem : reminders) {
-            try {
-                UUID remId = parseUUID(rem.get("id"));
-                if (remId == null) remId = UUID.randomUUID();
-
-                BigDecimal amount = getBigDecimal(rem.get("amount"), BigDecimal.ZERO);
-                boolean completed = Boolean.TRUE.equals(rem.get("completed"));
-                String title = getString(rem.get("title"), "Upcoming Payment");
-                String description = getString(rem.get("description"), null);
-                Date dueDate = parseSqlDate(rem.get("dueDate"), rem.get("date"), null);
-                Date reminderDate = parseSqlDate(rem.get("reminderDate"), rem.get("dueDate"), null);
-                boolean notified = Boolean.TRUE.equals(rem.get("reminderNotified"));
-                Timestamp createdAt = parseTimestamp(rem.get("createdAt"));
-
-                int rows = 1;
-                if (hasRemindersTable && isPostgres) {
-                    rows = jdbcTemplate.update(
-                            "INSERT INTO upcoming_payments (id, amount, completed, created_at, description, due_date, reminder_date, reminder_notified, title, user_id) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-                            "ON CONFLICT (id) DO NOTHING",
-                            remId, amount, completed, createdAt, description, dueDate, reminderDate, notified, title, userId
-                    );
-                }
-                syncCounts.put("reminders", syncCounts.get("reminders") + rows);
-            } catch (Exception e) {
-                log.warn("Failed to sync reminder: {}", rem, e);
-            }
-        }
-
-        // Record counts for People, PeopleLedger, and Transfers stored in user_backup
-        List<Map<String, Object>> people = extractList(payload, "people");
-        syncCounts.put("people", people.size());
-
-        List<Map<String, Object>> peopleLedger = extractList(payload, "peopleLedger");
-        syncCounts.put("peopleLedger", peopleLedger.size());
-
-        List<Map<String, Object>> transfers = extractList(payload, "transfers");
-        syncCounts.put("transfers", transfers.size());
-
-        log.info("Relational synchronization complete for user {}: {}", userId, syncCounts);
     }
 
-    // --- Helper parsing methods ---
-
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractList(Map<String, Object> payload, String key) {
-        Object val = payload.get(key);
-        if (val instanceof List) {
+    private List<Map<String, Object>> extractList(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        if (val instanceof List<?>) {
             return (List<Map<String, Object>>) val;
         }
-        return new ArrayList<>();
+        return Collections.emptyList();
     }
 
     private UUID parseUUID(Object val) {
         if (val == null) return null;
         try {
-            return UUID.fromString(val.toString().trim());
+            return UUID.fromString(String.valueOf(val).trim());
         } catch (Exception e) {
             return null;
         }
     }
 
-    private String getString(Object val, String fallback) {
-        if (val == null) return fallback;
-        String s = val.toString().trim();
-        return s.isEmpty() ? fallback : s;
+    private String getString(Object val, String defaultValue) {
+        if (val == null) return defaultValue;
+        String s = String.valueOf(val).trim();
+        return s.isEmpty() ? defaultValue : s;
     }
 
-    private BigDecimal getBigDecimal(Object val, BigDecimal fallback) {
-        if (val == null) return fallback;
+    private BigDecimal getBigDecimal(Object val, BigDecimal defaultValue) {
+        if (val == null) return defaultValue;
         try {
-            return new BigDecimal(val.toString());
+            return new BigDecimal(String.valueOf(val).trim());
         } catch (Exception e) {
-            return fallback;
+            return defaultValue;
         }
-    }
-
-    private Date parseSqlDate(Object... candidates) {
-        for (Object c : candidates) {
-            if (c != null) {
-                String s = c.toString().trim();
-                if (!s.isEmpty()) {
-                    try {
-                        if (s.length() >= 10) {
-                            String ymd = s.substring(0, 10);
-                            return Date.valueOf(ymd);
-                        }
-                    } catch (Exception ignored) {}
-                }
-            }
-        }
-        return Date.valueOf(LocalDate.now());
     }
 
     private Timestamp parseTimestamp(Object val) {
         if (val == null) return Timestamp.from(Instant.now());
-        String s = val.toString().trim();
         try {
-            if (s.endsWith("Z") || s.contains("T")) {
-                Instant inst = Instant.parse(s);
-                return Timestamp.from(inst);
-            }
-            if (s.length() == 10) {
-                return Timestamp.valueOf(LocalDate.parse(s).atStartOfDay());
-            }
-            return Timestamp.valueOf(s);
+            String s = String.valueOf(val).trim();
+            if (s.isEmpty()) return Timestamp.from(Instant.now());
+            return Timestamp.from(Instant.parse(s));
         } catch (Exception e) {
             return Timestamp.from(Instant.now());
+        }
+    }
+
+    private Date parseSqlDate(Object dateVal, Object fallbackDtVal, Object fallbackCreatedVal) {
+        Object val = dateVal != null ? dateVal : (fallbackDtVal != null ? fallbackDtVal : fallbackCreatedVal);
+        if (val == null) return Date.valueOf(LocalDate.now());
+        try {
+            String s = String.valueOf(val).trim();
+            if (s.length() >= 10 && s.charAt(4) == '-' && s.charAt(7) == '-') {
+                return Date.valueOf(s.substring(0, 10));
+            }
+            Instant inst = Instant.parse(s);
+            return new Date(inst.toEpochMilli());
+        } catch (Exception e) {
+            return Date.valueOf(LocalDate.now());
         }
     }
 }

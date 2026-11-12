@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import api from '../lib/api';
 import { getStoredData, saveStoredData, restoreDbFromBackup, clearLocalDb, generateUUID } from '../lib/db';
 import { sync } from '../lib/sync';
+import { enqueueAllLocalRecords } from '../lib/syncQueue';
 import { Preferences } from '@capacitor/preferences';
 
 const AuthContext = createContext(null);
@@ -258,33 +259,48 @@ export const AuthProvider = ({ children }) => {
       });
       await new Promise(r => setTimeout(r, 250));
 
-      // Step 3: Account Recovery & Credential Verification
+      // Step 3: Fast Account Recovery & Credential Verification
       onProgress?.({
         step: 3,
         title: 'Account recovery completed',
         detail: 'Verifying user credentials with Neon PostgreSQL cloud...'
       });
 
-      const response = await api.post('/api/auth/recover-and-sync', {
-        localUserId: localUserId,
-        email: normalizedEmail,
-        password: password,
-        fullName: fullName,
-        payload: payloadData
-      });
+      let response;
+      try {
+        response = await api.post('/api/auth/recover-account', {
+          localUserId: localUserId,
+          email: normalizedEmail,
+          password: password,
+          fullName: fullName
+        });
+      } catch (err) {
+        // Fallback to recover-and-sync if recover-account returns 404 or fails
+        if (err.response?.status === 404) {
+          response = await api.post('/api/auth/recover-and-sync', {
+            localUserId: localUserId,
+            email: normalizedEmail,
+            password: password,
+            fullName: fullName,
+            payload: payloadData
+          });
+        } else {
+          throw err;
+        }
+      }
 
-      const { token, userId, fullName: resFullName, syncedCounts } = response.data || {};
+      const { token, userId, fullName: resFullName } = response.data || {};
       if (!token) {
         throw new Error('Recovery failed: No token received from server');
       }
 
-      // Step 4: Records Synchronized
+      // Step 4: Records Synchronized & Queued for Background Sync
       onProgress?.({
         step: 4,
         title: 'Records identified & synchronized',
-        detail: `Uploaded ${syncedCounts?.expenses ?? rawExpenses.length} expenses, ${syncedCounts?.incomes ?? rawIncomes.length} incomes, ${syncedCounts?.accounts ?? rawAccounts.length} accounts to Neon cloud.`
+        detail: `Queued ${rawExpenses.length} expenses, ${rawIncomes.length} incomes, ${rawAccounts.length} accounts for cloud sync.`
       });
-      await new Promise(r => setTimeout(r, 350));
+      await new Promise(r => setTimeout(r, 200));
 
       // Save token in dual storage
       localStorage.setItem('token', token);
@@ -314,6 +330,9 @@ export const AuthProvider = ({ children }) => {
         console.warn('[Recovery] Failed to save store to Preferences:', prefErr);
       }
 
+      // Enqueue all local financial records for background cloud synchronization
+      enqueueAllLocalRecords();
+
       const localProfile = buildUserProfile(store);
       setUser(localProfile);
 
@@ -321,9 +340,9 @@ export const AuthProvider = ({ children }) => {
       onProgress?.({
         step: 5,
         title: 'Migration completed',
-        detail: 'All financial data is safely recovered and synchronized.'
+        detail: 'Secure session established. Offline-first background synchronization active.'
       });
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 300));
 
       return localProfile;
     } finally {

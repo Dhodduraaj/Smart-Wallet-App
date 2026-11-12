@@ -23,6 +23,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import Sidebar from './Sidebar';
 import SelfTransferDialog from './SelfTransferDialog';
+import SyncStatusIndicator from './SyncStatusIndicator';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import {
   DashboardOutlined,
@@ -182,19 +183,22 @@ const Layout = ({ children, darkMode, toggleDarkMode }) => {
                 </Typography>
               </Box>
             </Box>
-            {isAndroidApk && (
-              <Tooltip title="Exit app">
-                <IconButton
-                  color="inherit"
-                  aria-label="Exit app"
-                  onClick={handleExitApp}
-                  size="small"
-                  sx={{ color: 'text.secondary' }}
-                >
-                  <ExitToAppIcon />
-                </IconButton>
-              </Tooltip>
-            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <SyncStatusIndicator compact={false} />
+              {isAndroidApk && (
+                <Tooltip title="Exit app">
+                  <IconButton
+                    color="inherit"
+                    aria-label="Exit app"
+                    onClick={handleExitApp}
+                    size="small"
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    <ExitToAppIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
           </Toolbar>
         </AppBar>
       )}

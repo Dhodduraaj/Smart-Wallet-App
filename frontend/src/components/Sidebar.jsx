@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import SyncStatusIndicator from './SyncStatusIndicator';
 import {
   Drawer,
   List,
@@ -98,6 +99,9 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
           >
             Smart Wallet
           </Typography>
+        </Box>
+        <Box sx={{ mt: 0.5, pl: 0.5 }}>
+          <SyncStatusIndicator />
         </Box>
       </Toolbar>
 

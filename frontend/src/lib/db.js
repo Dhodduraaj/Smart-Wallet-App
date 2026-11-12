@@ -1,4 +1,5 @@
 import { Preferences } from '@capacitor/preferences';
+import { enqueueOperation } from './syncQueue.js';
 import {
   createTransactionDateTime,
   updateTransactionDateTime,
@@ -183,6 +184,20 @@ export async function saveLocalAccount(accountData, isSynced = false) {
 
   store.data.accounts = accounts;
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'ACCOUNT',
+        operationType: index === -1 ? 'CREATE' : 'UPDATE',
+        entityId: id,
+        payload: updatedData,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
+
   return updatedData;
 }
 
@@ -216,6 +231,18 @@ export async function deleteLocalAccount(id, isSynced = false) {
   store.data.incomes = (store.data.incomes || []).filter(i => i.accountId !== id);
 
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'ACCOUNT',
+        operationType: 'DELETE',
+        entityId: id,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
 }
 
 // Expense Helpers
@@ -347,6 +374,19 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
   store.data.accounts = accounts;
   saveStoredData(store);
 
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'EXPENSE',
+        operationType: isNew ? 'CREATE' : 'UPDATE',
+        entityId: id,
+        payload: updatedData,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
+
   return updatedData;
 }
 
@@ -359,6 +399,18 @@ export async function deleteLocalExpense(id, isSynced = false) {
     expenses.splice(index, 1);
     store.data.expenses = expenses;
     saveStoredData(store);
+
+    if (!isSynced) {
+      try {
+        enqueueOperation({
+          entityType: 'EXPENSE',
+          operationType: 'DELETE',
+          entityId: id,
+        });
+      } catch (e) {
+        console.warn('[db] enqueueOperation error:', e);
+      }
+    }
 
     // Refund
     await adjustLocalAccountBalance(exp.accountId, parseFloat(exp.amount || 0));
@@ -487,6 +539,19 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
   store.data.accounts = accounts;
   saveStoredData(store);
 
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'INCOME',
+        operationType: isNew ? 'CREATE' : 'UPDATE',
+        entityId: id,
+        payload: updatedData,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
+
   return updatedData;
 }
 
@@ -499,6 +564,18 @@ export async function deleteLocalIncome(id, isSynced = false) {
     incomes.splice(index, 1);
     store.data.incomes = incomes;
     saveStoredData(store);
+
+    if (!isSynced) {
+      try {
+        enqueueOperation({
+          entityType: 'INCOME',
+          operationType: 'DELETE',
+          entityId: id,
+        });
+      } catch (e) {
+        console.warn('[db] enqueueOperation error:', e);
+      }
+    }
 
     // Deduct
     await adjustLocalAccountBalance(inc.accountId, -parseFloat(inc.amount || 0));
@@ -554,6 +631,20 @@ export async function saveLocalUpcomingPayment(reminder, isSynced = false) {
 
   store.data.reminders = reminders;
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'REMINDER',
+        operationType: index === -1 ? 'CREATE' : 'UPDATE',
+        entityId: id,
+        payload: updatedData,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
+
   return updatedData;
 }
 
@@ -561,6 +652,18 @@ export async function deleteLocalUpcomingPayment(id, isSynced = false) {
   const store = getStoredData();
   store.data.reminders = (store.data.reminders || []).filter(r => r.id !== id);
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'REMINDER',
+        operationType: 'DELETE',
+        entityId: id,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
 }
 
 export async function toggleUpcomingPaymentCompletedLocal(id, completed, isSynced = false) {
@@ -571,6 +674,20 @@ export async function toggleUpcomingPaymentCompletedLocal(id, completed, isSynce
     reminders[index].completed = completed;
     store.data.reminders = reminders;
     saveStoredData(store);
+
+    if (!isSynced) {
+      try {
+        enqueueOperation({
+          entityType: 'REMINDER',
+          operationType: 'UPDATE',
+          entityId: id,
+          payload: reminders[index],
+        });
+      } catch (e) {
+        console.warn('[db] enqueueOperation error:', e);
+      }
+    }
+
     return reminders[index];
   }
   return null;
@@ -595,6 +712,19 @@ export async function saveLocalTransfer(transferData, isSynced = false) {
   transfers.push(updatedTransfer);
   store.data.transfers = transfers;
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'TRANSFER',
+        operationType: 'CREATE',
+        entityId: id,
+        payload: updatedTransfer,
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error:', e);
+    }
+  }
 
   // Adjust account balances directly (without creating expenses/incomes)
   await adjustLocalAccountBalance(transferData.fromAccountId, -amount);
