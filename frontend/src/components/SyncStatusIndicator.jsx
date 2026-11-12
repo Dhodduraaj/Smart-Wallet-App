@@ -7,9 +7,10 @@ import {
   CloudOffOutlined,
   SyncProblemOutlined,
 } from '@mui/icons-material';
-import { getSyncStatus, processQueue } from '../lib/syncQueue';
+import { getSyncStatus } from '../lib/syncQueue';
+import { manualUnifiedSync } from '../lib/sync';
 
-export default function SyncStatusIndicator({ compact = false, isUploading = false, isDownloading = false }) {
+export default function SyncStatusIndicator({ compact = false, isSyncing = false, isUploading = false, isDownloading = false, onTriggerSync = null }) {
   const [syncInfo, setSyncInfo] = useState(getSyncStatus());
   const [isManualSyncing, setIsManualSyncing] = useState(false);
 
@@ -26,10 +27,13 @@ export default function SyncStatusIndicator({ compact = false, isUploading = fal
 
   const handleManualSync = async (e) => {
     e.stopPropagation();
-    if (syncInfo.status === 'SYNCING' || isManualSyncing || isUploading || isDownloading) return;
+    if (syncInfo.status === 'SYNCING' || isSyncing || isManualSyncing || isUploading || isDownloading) return;
+    if (onTriggerSync) {
+      return onTriggerSync(e);
+    }
     setIsManualSyncing(true);
     try {
-      await processQueue();
+      await manualUnifiedSync();
     } finally {
       setIsManualSyncing(false);
     }

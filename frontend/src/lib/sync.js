@@ -25,6 +25,7 @@ apiNetwork.interceptors.request.use(
 let isSyncing = false;
 let isManualUploading = false;
 let isManualDownloading = false;
+let isUnifiedSyncing = false;
 
 export async function sync() {
   if (isSyncing) return;
@@ -204,6 +205,91 @@ export async function manualDownloadFromCloud() {
     }
   } finally {
     isManualDownloading = false;
+    window.dispatchEvent(new CustomEvent('sync-status-changed', {
+      detail: getSyncStatus()
+    }));
+  }
+}
+
+/**
+ * UNIFIED SYNC CYCLE:
+ * Performs complete bidirectional synchronization in a single user action:
+ * 1. Upload: Push pending local queue operations & snapshot to cloud
+ * 2. Download / Pull: Fetch latest records from Neon PostgreSQL
+ * 3. Reconcile: Merge cloud data with local store safely
+ * 4. Verify & Notify: Refresh UI & dispatch data-change events
+ */
+export async function manualUnifiedSync() {
+  if (isUnifiedSyncing) return { inProgress: true };
+  if (!navigator.onLine) {
+    throw new Error('You are currently offline. Please connect to internet to sync.');
+  }
+
+  const token = localStorage.getItem('token');
+  const store = getStoredData();
+  if (!token || !store.isAuthenticated) {
+    throw new Error('Please log in before syncing with the cloud.');
+  }
+
+  isUnifiedSyncing = true;
+  window.dispatchEvent(new CustomEvent('sync-status-changed', {
+    detail: { status: 'SYNCING', isOnline: true }
+  }));
+
+  try {
+    // Step 1: Upload pending local operations
+    const queue = getStoredQueue();
+    const pendingOps = queue.filter(q => q.status === 'PENDING' || q.status === 'FAILED');
+    const initialPendingCount = pendingOps.length;
+
+    if (initialPendingCount > 0) {
+      await processQueue();
+      const updatedQueue = getStoredQueue();
+      const remainingPending = updatedQueue.filter(q => q.status === 'PENDING' || q.status === 'FAILED').length;
+      if (remainingPending > 0) {
+        throw new Error(`${remainingPending} operation(s) could not be uploaded. Check connection.`);
+      }
+    }
+
+    // Refresh cloud snapshot backup
+    await sync();
+
+    // Step 2 & 3: Pull cloud updates and reconcile
+    const userId = store.localUserId || store.data?.profile?.userId || store.data?.profile?.id;
+    const email = store.email || store.data?.profile?.email;
+
+    let mergeResult = { updatedCount: 0, deletedCount: 0 };
+    try {
+      const pullRes = await apiNetwork.get('/api/sync/pull', {
+        params: { userId, email }
+      });
+      if (pullRes.status === 200 && pullRes.data?.payload) {
+        mergeResult = mergeCloudDataIntoLocal(pullRes.data.payload);
+      }
+    } catch (pullErr) {
+      console.warn('[Sync Engine] Pull step encountered issue:', pullErr.message);
+    }
+
+    // Step 4: Verify and notify application
+    window.dispatchEvent(new CustomEvent('sync-completed'));
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
+
+    const summaryParts = [];
+    if (initialPendingCount > 0) summaryParts.push(`${initialPendingCount} uploaded`);
+    if (mergeResult.updatedCount > 0) summaryParts.push(`${mergeResult.updatedCount} imported`);
+    if (mergeResult.deletedCount > 0) summaryParts.push(`${mergeResult.deletedCount} removed`);
+
+    return {
+      success: true,
+      uploadedCount: initialPendingCount,
+      updatedCount: mergeResult.updatedCount,
+      deletedCount: mergeResult.deletedCount,
+      message: summaryParts.length > 0 
+        ? `Sync complete: ${summaryParts.join(', ')}.` 
+        : 'All data is synchronized and up to date.'
+    };
+  } finally {
+    isUnifiedSyncing = false;
     window.dispatchEvent(new CustomEvent('sync-status-changed', {
       detail: getSyncStatus()
     }));

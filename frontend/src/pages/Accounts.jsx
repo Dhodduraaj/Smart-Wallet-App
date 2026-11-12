@@ -47,7 +47,17 @@ const Accounts = () => {
   const fetchAccounts = async () => {
     try {
       const res = await api.get('/api/accounts');
-      setAccounts(res.data);
+      const accs = Array.isArray(res.data) ? res.data : [];
+      const seenCash = new Set();
+      const cleanAccs = accs.filter(a => {
+        const isCash = a.accountType === 'SYSTEM' || (a.accountName && a.accountName.trim().toLowerCase() === 'cash');
+        if (isCash) {
+          if (seenCash.has('cash')) return false;
+          seenCash.add('cash');
+        }
+        return true;
+      });
+      setAccounts(cleanAccs);
     } catch { toast.error('Failed to load accounts'); }
     finally { setLoading(false); }
   };
@@ -84,8 +94,8 @@ const Accounts = () => {
   const handleSave = async () => {
     if (!form.accountName.trim()) { toast.error('Account name is required'); return; }
     
-    // Enforce that system accounts cannot be manually created or type change
-    if (!editId && (form.accountType === 'SYSTEM' || form.accountType === 'CASH')) {
+    // Enforce that system accounts cannot be manually created or duplicate Cash account created
+    if (!editId && (form.accountType === 'SYSTEM' || form.accountType === 'CASH' || form.accountName.trim().toLowerCase() === 'cash')) {
       toast.error('The default Cash account is created automatically');
       return;
     }

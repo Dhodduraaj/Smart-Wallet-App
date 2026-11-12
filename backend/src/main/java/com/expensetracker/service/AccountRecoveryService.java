@@ -63,6 +63,10 @@ public class AccountRecoveryService {
                     hasRemindersTable = checkTable(meta, "upcoming_payments");
                     log.info("AccountRecoveryService initialized: isPostgres={}, hasAccounts={}, hasExpenses={}, hasIncomes={}",
                             isPostgres, hasAccountsTable, hasExpensesTable, hasIncomesTable);
+
+                    if (hasAccountsTable) {
+                        reconcileAndConstrainAccounts();
+                    }
                 }
             }
         } catch (Exception e) {
@@ -241,7 +245,8 @@ public class AccountRecoveryService {
                 if ("ACCOUNT".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
                         if (hasAccountsTable && isPostgres) {
-                            jdbcTemplate.update("DELETE FROM accounts WHERE id = ? AND user_id = ?", entityId, userId);
+                            // Default Cash account cannot be deleted
+                            jdbcTemplate.update("DELETE FROM accounts WHERE id = ? AND user_id = ? AND account_type <> 'SYSTEM' AND LOWER(account_name) <> 'cash'", entityId, userId);
                         }
                     } else {
                         String accName = getString(payload.get("accountName"), "Cash");
@@ -249,16 +254,27 @@ public class AccountRecoveryService {
                         BigDecimal balance = getBigDecimal(payload.get("currentBalance"), BigDecimal.ZERO);
                         Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
 
+                        boolean isCashOrSystem = "SYSTEM".equalsIgnoreCase(accType) || "cash".equalsIgnoreCase(accName);
+
                         if (hasAccountsTable && isPostgres) {
-                            jdbcTemplate.update(
-                                    "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
-                                    "VALUES (?, ?, ?, ?, ?, ?) " +
-                                    "ON CONFLICT (id) DO UPDATE SET " +
-                                    "account_name = EXCLUDED.account_name, " +
-                                    "account_type = EXCLUDED.account_type, " +
-                                    "current_balance = EXCLUDED.current_balance",
-                                    entityId, accName, accType, createdAt, balance, userId
-                            );
+                            if (isCashOrSystem) {
+                                // Idempotent: Update canonical Cash account rather than inserting duplicate
+                                UUID canonicalId = ensureDefaultCashAccount(userId);
+                                jdbcTemplate.update(
+                                        "UPDATE accounts SET current_balance = ? WHERE id = ? AND user_id = ?",
+                                        balance, canonicalId, userId
+                                );
+                            } else {
+                                jdbcTemplate.update(
+                                        "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
+                                        "VALUES (?, ?, ?, ?, ?, ?) " +
+                                        "ON CONFLICT (id) DO UPDATE SET " +
+                                        "account_name = EXCLUDED.account_name, " +
+                                        "account_type = EXCLUDED.account_type, " +
+                                        "current_balance = EXCLUDED.current_balance",
+                                        entityId, accName, accType, createdAt, balance, userId
+                                );
+                            }
                         }
                     }
                 } else if ("EXPENSE".equals(entityType)) {
@@ -514,11 +530,151 @@ public class AccountRecoveryService {
                 .build());
     }
 
-    private UUID ensureDefaultCashAccount(UUID userId) {
-        if (!hasAccountsTable || !isPostgres) return UUID.randomUUID();
+    public void reconcileAndConstrainAccounts() {
+        if (!hasAccountsTable) return;
+        try {
+            log.info("Starting Cash account reconciliation and deduplication...");
+            List<UUID> usersWithDupes = jdbcTemplate.query(
+                    "SELECT user_id FROM accounts " +
+                    "WHERE LOWER(account_name) = 'cash' OR account_type = 'SYSTEM' " +
+                    "GROUP BY user_id HAVING count(*) > 1",
+                    (rs, rowNum) -> UUID.fromString(rs.getString("user_id"))
+            );
+
+            log.info("Found {} user(s) with multiple Cash accounts needing reconciliation", usersWithDupes.size());
+
+            for (UUID userId : usersWithDupes) {
+                reconcileUserCashAccounts(userId);
+            }
+
+            if (isPostgres) {
+                try {
+                    jdbcTemplate.execute(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_default_cash " +
+                            "ON accounts (user_id) " +
+                            "WHERE account_type = 'SYSTEM' OR LOWER(account_name) = 'cash'"
+                    );
+                    log.info("PostgreSQL unique index uq_user_default_cash verified.");
+                } catch (Exception e) {
+                    log.warn("Could not create unique index uq_user_default_cash: {}", e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error during account reconciliation: {}", e.getMessage());
+        }
+    }
+
+    public void reconcileUserCashAccounts(UUID userId) {
+        if (!hasAccountsTable) return;
+        try {
+            List<Map<String, Object>> candidates = jdbcTemplate.queryForList(
+                    "SELECT id, account_name, account_type, current_balance, created_at FROM accounts " +
+                    "WHERE user_id = ? AND (LOWER(account_name) = 'cash' OR account_type = 'SYSTEM')",
+                    userId
+            );
+
+            if (candidates.size() <= 1) return;
+
+            UUID canonicalId = null;
+            long bestScore = -1;
+            Timestamp oldestCreatedAt = null;
+
+            for (Map<String, Object> c : candidates) {
+                UUID id = UUID.fromString(String.valueOf(c.get("id")));
+                BigDecimal bal = getBigDecimal(c.get("current_balance"), BigDecimal.ZERO);
+                Timestamp createdAt = null;
+                Object rawCreated = c.get("created_at");
+                if (rawCreated instanceof Timestamp) {
+                    createdAt = (Timestamp) rawCreated;
+                }
+
+                int expCount = 0;
+                int incCount = 0;
+                if (hasExpensesTable) {
+                    Integer count = jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM expenses WHERE account_id = ? AND user_id = ?",
+                            Integer.class, id, userId);
+                    if (count != null) expCount = count;
+                }
+                if (hasIncomesTable) {
+                    Integer count = jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM incomes WHERE account_id = ? AND user_id = ?",
+                            Integer.class, id, userId);
+                    if (count != null) incCount = count;
+                }
+
+                long score = (expCount + incCount) * 1000L + (bal.compareTo(BigDecimal.ZERO) != 0 ? 100L : 0L);
+
+                if (score > bestScore || (score == bestScore && (oldestCreatedAt == null || (createdAt != null && createdAt.before(oldestCreatedAt))))) {
+                    bestScore = score;
+                    canonicalId = id;
+                    oldestCreatedAt = createdAt;
+                }
+            }
+
+            if (canonicalId == null) return;
+
+            log.info("Reconciling user {} Cash accounts: selected canonical ID {}", userId, canonicalId);
+
+            for (Map<String, Object> c : candidates) {
+                UUID dupId = UUID.fromString(String.valueOf(c.get("id")));
+                if (dupId.equals(canonicalId)) continue;
+
+                BigDecimal dupBal = getBigDecimal(c.get("current_balance"), BigDecimal.ZERO);
+                BigDecimal dupExpenses = BigDecimal.ZERO;
+                BigDecimal dupIncomes = BigDecimal.ZERO;
+
+                if (hasExpensesTable) {
+                    BigDecimal sumExp = jdbcTemplate.queryForObject(
+                            "SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE account_id = ? AND user_id = ?",
+                            BigDecimal.class, dupId, userId);
+                    if (sumExp != null) dupExpenses = sumExp;
+                    jdbcTemplate.update("UPDATE expenses SET account_id = ? WHERE account_id = ? AND user_id = ?",
+                            canonicalId, dupId, userId);
+                }
+
+                if (hasIncomesTable) {
+                    BigDecimal sumInc = jdbcTemplate.queryForObject(
+                            "SELECT COALESCE(SUM(amount), 0) FROM incomes WHERE account_id = ? AND user_id = ?",
+                            BigDecimal.class, dupId, userId);
+                    if (sumInc != null) dupIncomes = sumInc;
+                    jdbcTemplate.update("UPDATE incomes SET account_id = ? WHERE account_id = ? AND user_id = ?",
+                            canonicalId, dupId, userId);
+                }
+
+                // If duplicate had transactions, apply net delta to canonical
+                if (dupExpenses.compareTo(BigDecimal.ZERO) > 0 || dupIncomes.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal netDelta = dupIncomes.subtract(dupExpenses);
+                    jdbcTemplate.update("UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                            netDelta, canonicalId, userId);
+                } else if (dupBal.compareTo(BigDecimal.ZERO) != 0) {
+                    BigDecimal canonBal = getBigDecimal(jdbcTemplate.queryForObject(
+                            "SELECT current_balance FROM accounts WHERE id = ? AND user_id = ?",
+                            BigDecimal.class, canonicalId, userId), BigDecimal.ZERO);
+                    if (canonBal.compareTo(BigDecimal.ZERO) == 0) {
+                        jdbcTemplate.update("UPDATE accounts SET current_balance = ? WHERE id = ? AND user_id = ?",
+                                dupBal, canonicalId, userId);
+                    }
+                }
+
+                jdbcTemplate.update("DELETE FROM accounts WHERE id = ? AND user_id = ?", dupId, userId);
+                log.info("Safely deleted duplicate Cash account {} for user {}", dupId, userId);
+            }
+
+            jdbcTemplate.update("UPDATE accounts SET account_name = 'Cash', account_type = 'SYSTEM' WHERE id = ? AND user_id = ?",
+                    canonicalId, userId);
+
+        } catch (Exception e) {
+            log.warn("Failed to reconcile Cash accounts for user {}: {}", userId, e.getMessage());
+        }
+    }
+
+    public UUID ensureDefaultCashAccount(UUID userId) {
+        if (!hasAccountsTable) return UUID.randomUUID();
         try {
             List<UUID> existing = jdbcTemplate.query(
-                    "SELECT id FROM accounts WHERE user_id = ? AND (account_type = 'SYSTEM' OR account_name = 'Cash') LIMIT 1",
+                    "SELECT id FROM accounts WHERE user_id = ? AND (account_type = 'SYSTEM' OR LOWER(account_name) = 'cash') " +
+                    "ORDER BY ABS(current_balance) DESC, created_at ASC LIMIT 1",
                     (rs, rowNum) -> UUID.fromString(rs.getString("id")),
                     userId
             );
@@ -526,12 +682,25 @@ public class AccountRecoveryService {
                 return existing.get(0);
             }
             UUID cashId = UUID.randomUUID();
-            jdbcTemplate.update(
-                    "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
-                    "VALUES (?, 'Cash', 'SYSTEM', ?, 0, ?) ON CONFLICT (id) DO NOTHING",
-                    cashId, Timestamp.from(Instant.now()), userId
+            if (isPostgres) {
+                jdbcTemplate.update(
+                        "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
+                        "VALUES (?, 'Cash', 'SYSTEM', ?, 0, ?) ON CONFLICT DO NOTHING",
+                        cashId, Timestamp.from(Instant.now()), userId
+                );
+            } else {
+                jdbcTemplate.update(
+                        "INSERT INTO accounts (id, account_name, account_type, created_at, current_balance, user_id) " +
+                        "VALUES (?, 'Cash', 'SYSTEM', ?, 0, ?)",
+                        cashId, Timestamp.from(Instant.now()), userId
+                );
+            }
+            List<UUID> confirmed = jdbcTemplate.query(
+                    "SELECT id FROM accounts WHERE user_id = ? AND (account_type = 'SYSTEM' OR LOWER(account_name) = 'cash') LIMIT 1",
+                    (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                    userId
             );
-            return cashId;
+            return !confirmed.isEmpty() ? confirmed.get(0) : cashId;
         } catch (Exception e) {
             log.warn("Could not ensure default cash account for user {}", userId, e);
             return UUID.randomUUID();
@@ -543,6 +712,8 @@ public class AccountRecoveryService {
     public void syncRelationalTables(UUID userId, Map<String, Object> payload, Map<String, Integer> syncCounts) {
         List<Map<String, Object>> accounts = extractList(payload, "accounts");
         Set<UUID> validAccountIds = new HashSet<>();
+        Map<UUID, UUID> remappedAccountIds = new HashMap<>();
+
         UUID defaultCashAccountId = ensureDefaultCashAccount(userId);
         validAccountIds.add(defaultCashAccountId);
 
@@ -555,6 +726,27 @@ public class AccountRecoveryService {
                 String accType = getString(acc.get("accountType"), "CUSTOM");
                 BigDecimal balance = getBigDecimal(acc.get("currentBalance"), BigDecimal.ZERO);
                 Timestamp createdAt = parseTimestamp(acc.get("createdAt"));
+
+                boolean isCashOrSystem = "SYSTEM".equalsIgnoreCase(accType) || "cash".equalsIgnoreCase(accName);
+
+                if (isCashOrSystem) {
+                    remappedAccountIds.put(accId, defaultCashAccountId);
+                    validAccountIds.add(defaultCashAccountId);
+
+                    if (hasAccountsTable && balance.compareTo(BigDecimal.ZERO) != 0) {
+                        BigDecimal currentCanonBal = getBigDecimal(jdbcTemplate.queryForObject(
+                                "SELECT current_balance FROM accounts WHERE id = ? AND user_id = ?",
+                                BigDecimal.class, defaultCashAccountId, userId), BigDecimal.ZERO);
+                        if (currentCanonBal.compareTo(BigDecimal.ZERO) == 0) {
+                            jdbcTemplate.update(
+                                    "UPDATE accounts SET current_balance = ? WHERE id = ? AND user_id = ?",
+                                    balance, defaultCashAccountId, userId
+                            );
+                        }
+                    }
+                    syncCounts.put("accounts", syncCounts.get("accounts") + 1);
+                    continue;
+                }
 
                 if (hasAccountsTable && isPostgres) {
                     jdbcTemplate.update(
@@ -589,6 +781,9 @@ public class AccountRecoveryService {
                 String paymentMode = getString(exp.get("paymentMode"), "CASH");
 
                 UUID accId = parseUUID(exp.get("accountId"));
+                if (accId != null && remappedAccountIds.containsKey(accId)) {
+                    accId = remappedAccountIds.get(accId);
+                }
                 if (accId == null || !validAccountIds.contains(accId)) {
                     accId = defaultCashAccountId;
                 }
@@ -629,6 +824,9 @@ public class AccountRecoveryService {
                 String notes = getString(inc.get("notes"), null);
 
                 UUID accId = parseUUID(inc.get("accountId"));
+                if (accId != null && remappedAccountIds.containsKey(accId)) {
+                    accId = remappedAccountIds.get(accId);
+                }
                 if (accId == null || !validAccountIds.contains(accId)) {
                     accId = defaultCashAccountId;
                 }
@@ -661,17 +859,28 @@ public class AccountRecoveryService {
         if (!isPostgres) return;
         try {
             if (hasAccountsTable) {
+                reconcileUserCashAccounts(userId);
+
                 List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                        "SELECT id, account_name, account_type, current_balance FROM accounts WHERE user_id = ?",
+                        "SELECT id, account_name, account_type, current_balance FROM accounts WHERE user_id = ? " +
+                        "ORDER BY (CASE WHEN account_type = 'SYSTEM' OR LOWER(account_name) = 'cash' THEN 0 ELSE 1 END), created_at ASC",
                         userId
                 );
                 if (!rows.isEmpty()) {
                     List<Map<String, Object>> accList = new ArrayList<>();
+                    boolean cashSeen = false;
                     for (Map<String, Object> row : rows) {
+                        String name = (String) row.get("account_name");
+                        String type = (String) row.get("account_type");
+                        boolean isCash = "SYSTEM".equalsIgnoreCase(type) || "cash".equalsIgnoreCase(name);
+                        if (isCash) {
+                            if (cashSeen) continue;
+                            cashSeen = true;
+                        }
                         Map<String, Object> a = new HashMap<>();
                         a.put("id", String.valueOf(row.get("id")));
-                        a.put("accountName", row.get("account_name"));
-                        a.put("accountType", row.get("account_type"));
+                        a.put("accountName", isCash ? "Cash" : name);
+                        a.put("accountType", isCash ? "SYSTEM" : type);
                         a.put("currentBalance", row.get("current_balance"));
                         a.put("deleted", false);
                         accList.add(a);

@@ -72,15 +72,97 @@ export function getStoredData() {
     }
   }
 
-  // Enforcement logic: Every user must always have a default Cash account
-  if (store.data && store.data.accounts) {
-    const hasSystemAccount = store.data.accounts.some(a => a.accountType === 'SYSTEM');
-    if (!hasSystemAccount) {
-      // Find if there is an existing cash account we can upgrade, or create a new one
-      const cashIndex = store.data.accounts.findIndex(a => a.accountType === 'CASH' || a.accountName === 'Cash');
-      if (cashIndex !== -1) {
-        store.data.accounts[cashIndex].accountType = 'SYSTEM';
-        store.data.accounts[cashIndex].locked = true;
+  // Enforcement logic: Every user must always have exactly ONE default Cash account.
+  // Reconcile and deduplicate any redundant Cash accounts safely without losing data.
+  if (store.data && Array.isArray(store.data.accounts)) {
+    const expenses = store.data.expenses || [];
+    const incomes = store.data.incomes || [];
+    const transfers = store.data.transfers || [];
+
+    const cashCandidates = store.data.accounts.filter(a => 
+      a && !a.deleted && (a.accountType === 'SYSTEM' || (a.accountName && a.accountName.trim().toLowerCase() === 'cash'))
+    );
+
+    if (cashCandidates.length > 1) {
+      // Score each candidate: (expCount + incCount) * 1000 + (balance !== 0 ? 100 : 0)
+      const scored = cashCandidates.map(c => {
+        const idLower = String(c.id).trim().toLowerCase();
+        const expCount = expenses.filter(e => e && !e.deleted && String(e.accountId).trim().toLowerCase() === idLower).length;
+        const incCount = incomes.filter(i => i && !i.deleted && String(i.accountId).trim().toLowerCase() === idLower).length;
+        const hasBalance = parseFloat(c.currentBalance || 0) !== 0 ? 100 : 0;
+        return {
+          account: c,
+          score: (expCount + incCount) * 1000 + hasBalance,
+          expCount,
+          incCount,
+          createdAt: c.createdAt ? new Date(c.createdAt).getTime() : 0
+        };
+      });
+
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.createdAt - b.createdAt;
+      });
+
+      const canonical = scored[0].account;
+      canonical.accountName = 'Cash';
+      canonical.accountType = 'SYSTEM';
+      canonical.locked = true;
+
+      const canonicalId = String(canonical.id).trim().toLowerCase();
+
+      // For all other duplicates, reassociate any orphaned transactions to canonical
+      scored.slice(1).forEach(({ account: dup }) => {
+        const dupId = String(dup.id).trim().toLowerCase();
+        
+        let dupExpensesSum = 0;
+        let dupIncomesSum = 0;
+
+        expenses.forEach(e => {
+          if (e && String(e.accountId).trim().toLowerCase() === dupId) {
+            e.accountId = canonical.id;
+            e.accountName = 'Cash';
+            dupExpensesSum += parseFloat(e.amount || 0);
+          }
+        });
+
+        incomes.forEach(i => {
+          if (i && String(i.accountId).trim().toLowerCase() === dupId) {
+            i.accountId = canonical.id;
+            i.accountName = 'Cash';
+            dupIncomesSum += parseFloat(i.amount || 0);
+          }
+        });
+
+        transfers.forEach(t => {
+          if (t && String(t.fromAccountId).trim().toLowerCase() === dupId) {
+            t.fromAccountId = canonical.id;
+          }
+          if (t && String(t.toAccountId).trim().toLowerCase() === dupId) {
+            t.toAccountId = canonical.id;
+          }
+        });
+
+        // Adjust canonical balance if duplicate had transactions
+        if (dupExpensesSum > 0 || dupIncomesSum > 0) {
+          canonical.currentBalance = parseFloat(canonical.currentBalance || 0) + dupIncomesSum - dupExpensesSum;
+        } else if (parseFloat(dup.currentBalance || 0) !== 0 && parseFloat(canonical.currentBalance || 0) === 0) {
+          canonical.currentBalance = parseFloat(dup.currentBalance || 0);
+        }
+
+        const idx = store.data.accounts.findIndex(a => String(a.id).trim().toLowerCase() === dupId);
+        if (idx !== -1) {
+          store.data.accounts.splice(idx, 1);
+        }
+      });
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    } else if (cashCandidates.length === 0) {
+      const otherCash = store.data.accounts.find(a => a.accountName && a.accountName.trim().toLowerCase() === 'cash');
+      if (otherCash) {
+        otherCash.accountName = 'Cash';
+        otherCash.accountType = 'SYSTEM';
+        otherCash.locked = true;
       } else {
         store.data.accounts.push({
           id: generateUUID(),
@@ -92,6 +174,10 @@ export function getStoredData() {
         });
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    } else {
+      cashCandidates[0].accountName = 'Cash';
+      cashCandidates[0].accountType = 'SYSTEM';
+      cashCandidates[0].locked = true;
     }
   }
 
@@ -154,6 +240,22 @@ export async function saveLocalAccount(accountData, isSynced = false) {
   const accounts = store.data.accounts || [];
   const index = accounts.findIndex(a => String(a.id).trim().toLowerCase() === targetId);
 
+  // Enforcement: prevent creating duplicate Cash accounts
+  const isCashOrSystem = (accountData.accountType === 'SYSTEM' || accountData.accountType === 'CASH' || (accountData.accountName && accountData.accountName.trim().toLowerCase() === 'cash'));
+  if (isCashOrSystem && index === -1) {
+    const existingCashIdx = accounts.findIndex(a => a && !a.deleted && (a.accountType === 'SYSTEM' || (a.accountName && a.accountName.trim().toLowerCase() === 'cash')));
+    if (existingCashIdx !== -1) {
+      accounts[existingCashIdx] = {
+        ...accounts[existingCashIdx],
+        currentBalance: parseFloat(accountData.currentBalance || accounts[existingCashIdx].currentBalance || 0),
+        deleted: false
+      };
+      store.data.accounts = accounts;
+      saveStoredData(store);
+      return accounts[existingCashIdx];
+    }
+  }
+
   // Enforcement: default cash account cannot be renamed
   if (index !== -1) {
     const existing = accounts[index];
@@ -213,22 +315,22 @@ export function resolveAccount(accounts, accountId, accountName) {
   // 1. Match by normalized ID
   if (accountId !== undefined && accountId !== null && accountId !== '') {
     const targetId = String(accountId).trim().toLowerCase();
-    const matchedById = accounts.find(a => String(a.id).trim().toLowerCase() === targetId);
+    const matchedById = accounts.find(a => a && !a.deleted && String(a.id).trim().toLowerCase() === targetId);
     if (matchedById) return matchedById;
   }
 
   // 2. Match by normalized account name
   if (accountName && typeof accountName === 'string' && accountName.trim()) {
     const targetName = accountName.trim().toLowerCase();
-    const matchedByName = accounts.find(a => a.accountName && a.accountName.trim().toLowerCase() === targetName);
+    const matchedByName = accounts.find(a => a && !a.deleted && a.accountName && a.accountName.trim().toLowerCase() === targetName);
     if (matchedByName) return matchedByName;
   }
 
-  // 3. Fallback to SYSTEM default Cash account, then any Cash account, then first available
-  const systemCash = accounts.find(a => a.accountType === 'SYSTEM' || (a.accountName && a.accountName.toLowerCase() === 'cash'));
+  // 3. Fallback to SYSTEM default Cash account, then any Cash account, then first non-deleted available
+  const systemCash = accounts.find(a => a && !a.deleted && (a.accountType === 'SYSTEM' || (a.accountName && a.accountName.trim().toLowerCase() === 'cash')));
   if (systemCash) return systemCash;
 
-  return accounts[0] || null;
+  return accounts.find(a => a && !a.deleted) || accounts[0] || null;
 }
 
 export async function adjustLocalAccountBalance(accountId, amountChange, isSynced = false) {
@@ -360,15 +462,18 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
   // Robust canonical account resolution
   let targetAcc = resolveAccount(accounts, expenseData.accountId, expenseData.accountName);
   if (!targetAcc) {
-    targetAcc = {
-      id: generateUUID(),
-      accountName: 'Cash',
-      accountType: 'SYSTEM',
-      locked: true,
-      currentBalance: 0,
-      deleted: false
-    };
-    accounts.push(targetAcc);
+    targetAcc = accounts.find(a => a && !a.deleted && (a.accountType === 'SYSTEM' || (a.accountName && a.accountName.toLowerCase() === 'cash')));
+    if (!targetAcc) {
+      targetAcc = {
+        id: generateUUID(),
+        accountName: 'Cash',
+        accountType: 'SYSTEM',
+        locked: true,
+        currentBalance: 0,
+        deleted: false
+      };
+      accounts.push(targetAcc);
+    }
   }
 
   const resolvedAccountId = targetAcc.id;
@@ -553,15 +658,18 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
   // Robust canonical account resolution
   let targetAcc = resolveAccount(accounts, incomeData.accountId, incomeData.accountName);
   if (!targetAcc) {
-    targetAcc = {
-      id: generateUUID(),
-      accountName: 'Cash',
-      accountType: 'SYSTEM',
-      locked: true,
-      currentBalance: 0,
-      deleted: false
-    };
-    accounts.push(targetAcc);
+    targetAcc = accounts.find(a => a && !a.deleted && (a.accountType === 'SYSTEM' || (a.accountName && a.accountName.toLowerCase() === 'cash')));
+    if (!targetAcc) {
+      targetAcc = {
+        id: generateUUID(),
+        accountName: 'Cash',
+        accountType: 'SYSTEM',
+        locked: true,
+        currentBalance: 0,
+        deleted: false
+      };
+      accounts.push(targetAcc);
+    }
   }
 
   const resolvedAccountId = targetAcc.id;
@@ -1333,9 +1441,26 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
   if (rawCloudAccounts.length > 0) {
     const localAccounts = store.data.accounts || [];
 
-    for (const cloudAcc of rawCloudAccounts) {
+    // Filter and deduplicate cloud accounts: ensure at most ONE default Cash account from cloud
+    const nonCashCloud = [];
+    const cashCloud = [];
+    for (const acc of rawCloudAccounts) {
+      if (acc && !acc.deleted) {
+        if (acc.accountType === 'SYSTEM' || (acc.accountName && acc.accountName.trim().toLowerCase() === 'cash')) {
+          cashCloud.push(acc);
+        } else {
+          nonCashCloud.push(acc);
+        }
+      }
+    }
+    const deduplicatedCloudAccounts = [...nonCashCloud];
+    if (cashCloud.length > 0) {
+      cashCloud.sort((a, b) => Math.abs(parseFloat(b.currentBalance || 0)) - Math.abs(parseFloat(a.currentBalance || 0)));
+      deduplicatedCloudAccounts.push(cashCloud[0]);
+    }
+
+    for (const cloudAcc of deduplicatedCloudAccounts) {
       const cloudAccId = String(cloudAcc.id).trim().toLowerCase();
-      // Start with authoritative cloud account balance
       let balance = parseFloat(cloudAcc.currentBalance || 0);
 
       // Adjust for this device's own pending offline operations that have not yet reached the cloud
@@ -1362,24 +1487,52 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
         }
       });
 
-      const existingIdx = localAccounts.findIndex(a => 
-        String(a.id).trim().toLowerCase() === cloudAccId ||
-        (a.accountName && cloudAcc.accountName && a.accountName.trim().toLowerCase() === cloudAcc.accountName.trim().toLowerCase())
-      );
+      const isCash = cloudAcc.accountType === 'SYSTEM' || (cloudAcc.accountName && cloudAcc.accountName.trim().toLowerCase() === 'cash');
+
+      const existingIdx = localAccounts.findIndex(a => {
+        if (isCash) {
+          return a.accountType === 'SYSTEM' || (a.accountName && a.accountName.trim().toLowerCase() === 'cash');
+        }
+        return String(a.id).trim().toLowerCase() === cloudAccId ||
+          (a.accountName && cloudAcc.accountName && a.accountName.trim().toLowerCase() === cloudAcc.accountName.trim().toLowerCase());
+      });
 
       if (existingIdx !== -1) {
         if (!pendingAccountIds.has(String(localAccounts[existingIdx].id).trim().toLowerCase())) {
+          const oldLocalId = String(localAccounts[existingIdx].id).trim().toLowerCase();
           localAccounts[existingIdx] = {
             ...localAccounts[existingIdx],
             ...cloudAcc,
+            accountName: isCash ? 'Cash' : (cloudAcc.accountName || localAccounts[existingIdx].accountName),
+            accountType: isCash ? 'SYSTEM' : (cloudAcc.accountType || localAccounts[existingIdx].accountType),
+            locked: isCash ? true : localAccounts[existingIdx].locked,
             currentBalance: balance,
             deleted: false
           };
+
+          // If Cash account ID updated from server canonical ID, remap local transactions to prevent orphan
+          if (isCash && oldLocalId !== cloudAccId) {
+            (store.data.expenses || []).forEach(e => {
+              if (e && String(e.accountId).trim().toLowerCase() === oldLocalId) {
+                e.accountId = cloudAcc.id;
+                e.accountName = 'Cash';
+              }
+            });
+            (store.data.incomes || []).forEach(i => {
+              if (i && String(i.accountId).trim().toLowerCase() === oldLocalId) {
+                i.accountId = cloudAcc.id;
+                i.accountName = 'Cash';
+              }
+            });
+          }
           updatedCount++;
         }
       } else {
         localAccounts.push({
           ...cloudAcc,
+          accountName: isCash ? 'Cash' : cloudAcc.accountName,
+          accountType: isCash ? 'SYSTEM' : cloudAcc.accountType,
+          locked: isCash ? true : cloudAcc.locked,
           currentBalance: balance,
           deleted: false
         });
