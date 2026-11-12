@@ -31,3 +31,4 @@ public class BatchSyncRequest {
         private String createdAt;
     }
 }
+

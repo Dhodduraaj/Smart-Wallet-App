@@ -17,3 +17,4 @@ public class BatchSyncResponse {
     private int processedCount;
     private String message;
 }
+

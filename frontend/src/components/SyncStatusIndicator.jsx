@@ -118,3 +118,4 @@ export default function SyncStatusIndicator({ compact = false }) {
     </Tooltip>
   );
 }
+

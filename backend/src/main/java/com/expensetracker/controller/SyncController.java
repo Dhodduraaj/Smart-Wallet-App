@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @RestController
-@RequestMapping({"/api/sync", "/sync"})
+@RequestMapping({ "/api/sync", "/sync" })
 @RequiredArgsConstructor
 @Slf4j
 public class SyncController {
@@ -37,21 +37,23 @@ public class SyncController {
         log.info("Received register request: {}", request);
         String localUserIdStr = (String) request.get("localUserId");
         String email = (String) request.get("email");
-        
+
         if (localUserIdStr == null || email == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "localUserId and email are required"));
         }
-        
+
         UUID localUserId = UUID.fromString(localUserIdStr);
-        
+
         // Check if user already exists
         Optional<User> existingUser = userRepository.findById(localUserId);
         if (existingUser.isEmpty()) {
-            // Check if email is already taken by another user ID (e.g. from previous installation)
+            // Check if email is already taken by another user ID (e.g. from previous
+            // installation)
             Optional<User> userByEmail = userRepository.findByEmail(email);
             if (userByEmail.isPresent()) {
                 localUserId = userByEmail.get().getId();
-                log.info("Email {} already exists under ID: {}. Linking local record to existing cloud user.", email, localUserId);
+                log.info("Email {} already exists under ID: {}. Linking local record to existing cloud user.", email,
+                        localUserId);
             } else {
                 User user = User.builder()
                         .id(localUserId)
@@ -62,7 +64,7 @@ public class SyncController {
                 log.info("Registered new user record: {}", email);
             }
         }
-        
+
         // Save full JSON backup
         try {
             String payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(request);
@@ -90,20 +92,21 @@ public class SyncController {
             log.warn("Non-fatal relational sync warning in SyncController.register: {}", e.getMessage());
         }
 
-        return ResponseEntity.ok(Map.of("status", "success", "message", "User backup registered successfully", "userId", localUserId.toString()));
+        return ResponseEntity.ok(Map.of("status", "success", "message", "User backup registered successfully", "userId",
+                localUserId.toString()));
     }
 
     @PostMapping("/update")
     public ResponseEntity<?> update(@RequestBody Map<String, Object> request) {
         log.info("Received update request: {}", request);
         String localUserIdStr = (String) request.get("localUserId");
-        
+
         if (localUserIdStr == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "localUserId is required"));
         }
-        
+
         UUID localUserId = UUID.fromString(localUserIdStr);
-        
+
         // Create user if not exists (auto-register fallback)
         Optional<User> existingUser = userRepository.findById(localUserId);
         if (existingUser.isEmpty()) {
@@ -125,7 +128,7 @@ public class SyncController {
                 return ResponseEntity.badRequest().body(Map.of("message", "User not found and email is missing"));
             }
         }
-        
+
         // Save full JSON backup
         try {
             String payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(request);
@@ -157,10 +160,11 @@ public class SyncController {
     }
 
     @GetMapping("/pull")
-    public ResponseEntity<?> pull(@RequestParam(required = false) String email, @RequestParam(required = false) String userId) {
+    public ResponseEntity<?> pull(@RequestParam(required = false) String email,
+            @RequestParam(required = false) String userId) {
         log.info("Received pull request: email={}, userId={}", email, userId);
         UUID targetUserId = null;
-        
+
         if (userId != null && !userId.trim().isEmpty()) {
             targetUserId = UUID.fromString(userId);
         } else if (email != null && !email.trim().isEmpty()) {
