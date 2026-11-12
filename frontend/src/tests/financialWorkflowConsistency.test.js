@@ -13,8 +13,8 @@ global.window = {
   dispatchEvent: (evt) => {
     dispatchedEvents.push(evt.name || evt.type);
   },
-  addEventListener: () => {},
-  removeEventListener: () => {}
+  addEventListener: () => { },
+  removeEventListener: () => { }
 };
 
 const dispatchedEvents = [];
@@ -232,3 +232,4 @@ runFinancialWorkflowTests().catch(err => {
   console.error('❌ Test failed:', err);
   process.exit(1);
 });
+

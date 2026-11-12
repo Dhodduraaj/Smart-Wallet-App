@@ -166,9 +166,12 @@ public class SyncController {
         UUID targetUserId = null;
 
         if (userId != null && !userId.trim().isEmpty()) {
-            targetUserId = UUID.fromString(userId);
-        } else if (email != null && !email.trim().isEmpty()) {
-            Optional<User> userOpt = userRepository.findByEmail(email);
+            try {
+                targetUserId = UUID.fromString(userId.trim());
+            } catch (Exception ignored) {}
+        }
+        if (targetUserId == null && email != null && !email.trim().isEmpty()) {
+            Optional<User> userOpt = userRepository.findByEmail(email.trim().toLowerCase());
             if (userOpt.isPresent()) {
                 targetUserId = userOpt.get().getId();
             }
@@ -179,15 +182,39 @@ public class SyncController {
             return ResponseEntity.status(404).body(Map.of("message", "User not found"));
         }
 
+        Map<String, Object> finalPayload = new HashMap<>();
+
+        // 1. First load from JSON backup snapshot if present
         Optional<UserBackup> backupOpt = userBackupRepository.findById(targetUserId);
-        if (backupOpt.isPresent()) {
-            log.info("Successfully retrieved backup for user ID: {}", targetUserId);
-            return ResponseEntity.ok()
-                    .header("Content-Type", "application/json")
-                    .body(backupOpt.get().getPayload());
+        if (backupOpt.isPresent() && backupOpt.get().getPayload() != null) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> parsed = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readValue(backupOpt.get().getPayload(), Map.class);
+                if (parsed != null) {
+                    Object inner = parsed.get("payload");
+                    if (inner instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> innerMap = (Map<String, Object>) inner;
+                        finalPayload.putAll(innerMap);
+                    } else {
+                        finalPayload.putAll(parsed);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse user backup JSON: {}", e.getMessage());
+            }
         }
 
-        log.warn("No backup found for user ID: {}", targetUserId);
-        return ResponseEntity.status(404).body(Map.of("message", "No backup found for this user"));
+        // 2. Overlay with latest relational tables (accounts with live balances, expenses, incomes)
+        accountRecoveryService.enrichWithRelationalData(targetUserId, finalPayload);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("userId", targetUserId.toString());
+        response.put("email", email);
+        response.put("payload", finalPayload);
+
+        log.info("Successfully assembled pull payload for user ID: {}", targetUserId);
+        return ResponseEntity.ok(response);
     }
 }

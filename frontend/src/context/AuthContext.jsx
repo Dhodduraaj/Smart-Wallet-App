@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import api from '../lib/api';
 import { getStoredData, saveStoredData, restoreDbFromBackup, clearLocalDb, generateUUID } from '../lib/db';
-import { sync } from '../lib/sync';
+import { sync, apiNetwork } from '../lib/sync';
 import { enqueueAllLocalRecords } from '../lib/syncQueue';
 import { Preferences } from '@capacitor/preferences';
 
@@ -367,6 +367,12 @@ export const AuthProvider = ({ children }) => {
       }
 
       // Otherwise standard login for empty/fresh device
+      onProgress?.({
+        step: 1,
+        title: 'Verifying credentials',
+        detail: 'Connecting to cloud database...'
+      });
+
       const response = await api.post('/api/auth/login', {
         email: normalizedEmail,
         password: password
@@ -383,6 +389,60 @@ export const AuthProvider = ({ children }) => {
         await Preferences.set({ key: 'token', value: token });
       } catch (prefErr) {
         console.warn('[Auth Login] Failed to save token to Preferences:', prefErr);
+      }
+
+      onProgress?.({
+        step: 2,
+        title: 'Importing cloud data',
+        detail: 'Restoring your financial records from cloud database...'
+      });
+
+      // PULL DATA FROM CLOUD FOR FRESH DEVICE
+      try {
+        const pullRes = await apiNetwork.get(`/api/sync/pull?email=${encodeURIComponent(normalizedEmail)}&userId=${encodeURIComponent(userId || '')}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (pullRes.status === 200 && pullRes.data) {
+          const rawData = pullRes.data;
+          const pulledData = rawData.payload || rawData;
+
+          if (pulledData) {
+            if (Array.isArray(pulledData.accounts) && pulledData.accounts.length > 0) {
+              store.data.accounts = pulledData.accounts;
+            }
+            if (Array.isArray(pulledData.expenses)) {
+              store.data.expenses = pulledData.expenses;
+            } else if (Array.isArray(pulledData.transactions)) {
+              store.data.expenses = pulledData.transactions.filter(t => t.transactionType === 'expense' || t.type === 'expense');
+              store.data.incomes = pulledData.transactions.filter(t => t.transactionType === 'income' || t.type === 'income');
+            }
+            if (Array.isArray(pulledData.incomes)) {
+              store.data.incomes = pulledData.incomes;
+            }
+            if (Array.isArray(pulledData.transfers)) {
+              store.data.transfers = pulledData.transfers;
+            }
+            if (Array.isArray(pulledData.reminders)) {
+              store.data.reminders = pulledData.reminders;
+            }
+            if (Array.isArray(pulledData.people)) {
+              store.data.people = pulledData.people;
+            }
+            if (Array.isArray(pulledData.peopleLedger)) {
+              store.data.peopleLedger = pulledData.peopleLedger;
+            }
+            if (pulledData.profile && typeof pulledData.profile === 'object') {
+              store.data.profile = { ...store.data.profile, ...pulledData.profile };
+            }
+            if (pulledData.settings && typeof pulledData.settings === 'object') {
+              store.data.settings = { ...store.data.settings, ...pulledData.settings };
+            }
+            store.lastSync = new Date().toISOString();
+            console.info(`[Auth Login] Successfully restored cloud backup on fresh device: ${store.data.expenses?.length || 0} expenses, ${store.data.incomes?.length || 0} incomes, ${store.data.accounts?.length || 0} accounts.`);
+          }
+        }
+      } catch (pullErr) {
+        console.warn('[Auth Login] Cloud pull error (non-fatal, user may have a brand-new account):', pullErr.message);
       }
 
       store.email = normalizedEmail;
@@ -406,9 +466,8 @@ export const AuthProvider = ({ children }) => {
       const localProfile = buildUserProfile(store);
       setUser(localProfile);
 
-      setTimeout(() => {
-        sync();
-      }, 300);
+      window.dispatchEvent(new CustomEvent('sync-completed'));
+      window.dispatchEvent(new CustomEvent('financial-data-changed'));
 
       return localProfile;
     } finally {

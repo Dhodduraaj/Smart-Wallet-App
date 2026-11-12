@@ -657,6 +657,87 @@ public class AccountRecoveryService {
     }
 
     @SuppressWarnings("unchecked")
+    public void enrichWithRelationalData(UUID userId, Map<String, Object> payload) {
+        if (!isPostgres) return;
+        try {
+            if (hasAccountsTable) {
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                        "SELECT id, account_name, account_type, current_balance FROM accounts WHERE user_id = ?",
+                        userId
+                );
+                if (!rows.isEmpty()) {
+                    List<Map<String, Object>> accList = new ArrayList<>();
+                    for (Map<String, Object> row : rows) {
+                        Map<String, Object> a = new HashMap<>();
+                        a.put("id", String.valueOf(row.get("id")));
+                        a.put("accountName", row.get("account_name"));
+                        a.put("accountType", row.get("account_type"));
+                        a.put("currentBalance", row.get("current_balance"));
+                        a.put("deleted", false);
+                        accList.add(a);
+                    }
+                    payload.put("accounts", accList);
+                }
+            }
+
+            if (hasExpensesTable) {
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                        "SELECT e.id, e.amount, e.category, e.description, e.expense_date, e.notes, e.payment_mode, e.account_id, e.created_at, a.account_name " +
+                        "FROM expenses e LEFT JOIN accounts a ON e.account_id = a.id " +
+                        "WHERE e.user_id = ? ORDER BY e.created_at DESC",
+                        userId
+                );
+                if (!rows.isEmpty()) {
+                    List<Map<String, Object>> expList = new ArrayList<>();
+                    for (Map<String, Object> row : rows) {
+                        Map<String, Object> e = new HashMap<>();
+                        e.put("id", String.valueOf(row.get("id")));
+                        e.put("amount", row.get("amount"));
+                        e.put("category", row.get("category"));
+                        e.put("description", row.get("description"));
+                        e.put("expenseDate", row.get("expense_date") != null ? row.get("expense_date").toString() : null);
+                        e.put("notes", row.get("notes"));
+                        e.put("paymentMode", row.get("payment_mode"));
+                        e.put("accountId", row.get("account_id") != null ? String.valueOf(row.get("account_id")) : null);
+                        e.put("accountName", row.get("account_name") != null ? String.valueOf(row.get("account_name")) : "Cash");
+                        e.put("createdAt", row.get("created_at") != null ? row.get("created_at").toString() : null);
+                        e.put("deleted", false);
+                        expList.add(e);
+                    }
+                    payload.put("expenses", expList);
+                }
+            }
+
+            if (hasIncomesTable) {
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                        "SELECT i.id, i.amount, i.description, i.income_date, i.notes, i.account_id, i.created_at, a.account_name " +
+                        "FROM incomes i LEFT JOIN accounts a ON i.account_id = a.id " +
+                        "WHERE i.user_id = ? ORDER BY i.created_at DESC",
+                        userId
+                );
+                if (!rows.isEmpty()) {
+                    List<Map<String, Object>> incList = new ArrayList<>();
+                    for (Map<String, Object> row : rows) {
+                        Map<String, Object> i = new HashMap<>();
+                        i.put("id", String.valueOf(row.get("id")));
+                        i.put("amount", row.get("amount"));
+                        i.put("description", row.get("description"));
+                        i.put("incomeDate", row.get("income_date") != null ? row.get("income_date").toString() : null);
+                        i.put("notes", row.get("notes"));
+                        i.put("accountId", row.get("account_id") != null ? String.valueOf(row.get("account_id")) : null);
+                        i.put("accountName", row.get("account_name") != null ? String.valueOf(row.get("account_name")) : "Cash");
+                        i.put("createdAt", row.get("created_at") != null ? row.get("created_at").toString() : null);
+                        i.put("deleted", false);
+                        incList.add(i);
+                    }
+                    payload.put("incomes", incList);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not enrich with relational data: {}", e.getMessage());
+        }
+    }
+
     private List<Map<String, Object>> extractList(Map<String, Object> map, String key) {
         Object val = map.get(key);
         if (val instanceof List<?>) {
