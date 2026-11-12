@@ -312,11 +312,13 @@ export async function processQueue() {
       lastSyncTimestamp = new Date().toISOString();
       lastSyncError = null;
 
-      // Update store lastSync
-      store.lastSync = lastSyncTimestamp;
-      saveStoredData(store);
+      // Update store lastSync with fresh snapshot
+      const freshStore = getStoredData();
+      freshStore.lastSync = lastSyncTimestamp;
+      saveStoredData(freshStore);
 
       window.dispatchEvent(new CustomEvent('sync-completed'));
+      window.dispatchEvent(new CustomEvent('financial-data-changed'));
 
       // If more operations remain, schedule next batch immediately
       if (remainingQueue.some(q => q.status === 'PENDING' || q.status === 'FAILED')) {

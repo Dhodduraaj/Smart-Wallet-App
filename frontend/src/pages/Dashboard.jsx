@@ -167,10 +167,12 @@ const Dashboard = () => {
       fetchDashboardData();
     };
     window.addEventListener('sync-completed', handleSync);
+    window.addEventListener('financial-data-changed', handleSync);
 
     return () => {
       cancelled = true;
       window.removeEventListener('sync-completed', handleSync);
+      window.removeEventListener('financial-data-changed', handleSync);
     };
   }, []);
 

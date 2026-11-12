@@ -97,17 +97,26 @@ const Income = () => {
       fetchIncomes().catch(() => {});
     };
     window.addEventListener('sync-completed', handleSync);
+    window.addEventListener('financial-data-changed', handleSync);
 
     return () => {
       cancelled = true;
       window.removeEventListener('sync-completed', handleSync);
+      window.removeEventListener('financial-data-changed', handleSync);
     };
   }, [page, rowsPerPage, search]);
 
-  const openCreate = () => {
-    fetchAccounts().catch(() => {});
+  const openCreate = async () => {
+    let currentAccounts = accounts;
+    if (!currentAccounts || currentAccounts.length === 0) {
+      try {
+        const res = await api.get('/api/accounts');
+        currentAccounts = res.data || [];
+        setAccounts(currentAccounts);
+      } catch {}
+    }
     setEditId(null);
-    setForm({ ...emptyForm, accountId: accounts[0]?.id || '' });
+    setForm({ ...emptyForm, accountId: currentAccounts[0]?.id || '' });
     setDialogOpen(true);
   };
   const openEdit = (inc) => {
@@ -144,6 +153,7 @@ const Income = () => {
       if (editId) { await api.put(`/api/incomes/${editId}`, payload); toast.success('Income updated'); }
       else { await api.post('/api/incomes', payload); toast.success('Income added'); }
       setDialogOpen(false);
+      setPage(0);
       await Promise.all([fetchAccounts(), fetchIncomes()]);
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to save'); }
     finally { setSubmitting(false); }
@@ -227,7 +237,7 @@ const Income = () => {
                   
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
                     <Typography variant="caption" sx={{ bgcolor: 'action.hover', px: 1, py: 0.5, borderRadius: 1, fontWeight: 500, color: 'text.secondary' }}>
-                      {inc.accountName}
+                      {inc.accountName || 'Cash'}
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
                       <IconButton size="small" onClick={() => openEdit(inc)}>
@@ -282,7 +292,7 @@ const Income = () => {
                         <TableCell sx={{ whiteSpace: 'nowrap' }}>{dt.dateStr}</TableCell>
                         <TableCell sx={{ whiteSpace: 'nowrap', color: 'text.secondary' }}>{dt.timeStr}</TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>{inc.description}</TableCell>
-                        <TableCell>{inc.accountName}</TableCell>
+                        <TableCell>{inc.accountName || 'Cash'}</TableCell>
                         <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inc.notes || '—'}</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, color: 'success.main' }}>+₹{parseFloat(inc.amount).toFixed(2)}</TableCell>
                         <TableCell align="center">

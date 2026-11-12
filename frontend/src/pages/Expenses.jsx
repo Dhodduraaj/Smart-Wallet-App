@@ -122,20 +122,30 @@ const Expenses = () => {
       fetchExpenses().catch(() => {});
     };
     window.addEventListener('sync-completed', handleSync);
+    window.addEventListener('financial-data-changed', handleSync);
 
     return () => {
       cancelled = true;
       window.removeEventListener('sync-completed', handleSync);
+      window.removeEventListener('financial-data-changed', handleSync);
     };
   }, [page, rowsPerPage, search, filterCategory]);
 
-  const openCreate = () => {
-    fetchAccounts().catch(() => {});
+  const openCreate = async () => {
+    let currentAccounts = accounts;
+    if (!currentAccounts || currentAccounts.length === 0) {
+      try {
+        const res = await api.get('/api/accounts');
+        currentAccounts = res.data || [];
+        setAccounts(currentAccounts);
+      } catch {}
+    }
     setEditId(null);
     const now = new Date();
     const { dateStr, timeStr } = getLocalDateAndTimeString(now);
+    const defaultAccountId = currentAccounts.length > 0 ? currentAccounts[0].id : '';
     setForm({
-      accountId: accounts.length > 0 ? accounts[0].id : '',
+      accountId: defaultAccountId,
       description: '',
       amount: '',
       category: 'Food',
@@ -206,6 +216,7 @@ const Expenses = () => {
         toast.success('Expense added');
       }
       setDialogOpen(false);
+      setPage(0);
       await Promise.all([fetchAccounts(), fetchExpenses()]);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save expense');
@@ -305,7 +316,7 @@ const Expenses = () => {
                         }}
                       />
                       <Typography variant="caption" sx={{ bgcolor: 'action.hover', px: 1, py: 0.5, borderRadius: 1, fontWeight: 500, color: 'text.secondary' }}>
-                        {exp.accountName}
+                        {exp.accountName || 'Cash'}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
@@ -364,7 +375,7 @@ const Expenses = () => {
                         <TableCell>
                           <Chip label={exp.category} size="small" sx={{ bgcolor: getCategoryColor(exp.category) + '20', color: getCategoryColor(exp.category), fontWeight: 600, borderRadius: 1.5 }} />
                         </TableCell>
-                        <TableCell>{exp.accountName}</TableCell>
+                        <TableCell>{exp.accountName || 'Cash'}</TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, color: 'error.main' }}>-₹{parseFloat(exp.amount).toFixed(2)}</TableCell>
                         <TableCell align="center">
                           <IconButton size="small" onClick={() => openEdit(exp)}><EditOutlined fontSize="small" /></IconButton>

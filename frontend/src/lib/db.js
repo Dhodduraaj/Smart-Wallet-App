@@ -142,7 +142,7 @@ export async function getLocalAccounts() {
 
 export async function getLocalAccount(id) {
   const store = getStoredData();
-  const acc = (store.data.accounts || []).find(a => a.id === id);
+  const acc = resolveAccount(store.data.accounts || [], id);
   if (!acc || acc.deleted) return null;
   return acc;
 }
@@ -150,8 +150,9 @@ export async function getLocalAccount(id) {
 export async function saveLocalAccount(accountData, isSynced = false) {
   const store = getStoredData();
   const id = accountData.id || generateUUID();
+  const targetId = String(id).trim().toLowerCase();
   const accounts = store.data.accounts || [];
-  const index = accounts.findIndex(a => a.id === id);
+  const index = accounts.findIndex(a => String(a.id).trim().toLowerCase() === targetId);
 
   // Enforcement: default cash account cannot be renamed
   if (index !== -1) {
@@ -198,37 +199,84 @@ export async function saveLocalAccount(accountData, isSynced = false) {
     }
   }
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
+  }
+
   return updatedData;
+}
+
+// Canonical Account Resolution Helper
+export function resolveAccount(accounts, accountId, accountName) {
+  if (!Array.isArray(accounts) || accounts.length === 0) return null;
+
+  // 1. Match by normalized ID
+  if (accountId !== undefined && accountId !== null && accountId !== '') {
+    const targetId = String(accountId).trim().toLowerCase();
+    const matchedById = accounts.find(a => String(a.id).trim().toLowerCase() === targetId);
+    if (matchedById) return matchedById;
+  }
+
+  // 2. Match by normalized account name
+  if (accountName && typeof accountName === 'string' && accountName.trim()) {
+    const targetName = accountName.trim().toLowerCase();
+    const matchedByName = accounts.find(a => a.accountName && a.accountName.trim().toLowerCase() === targetName);
+    if (matchedByName) return matchedByName;
+  }
+
+  // 3. Fallback to SYSTEM default Cash account, then any Cash account, then first available
+  const systemCash = accounts.find(a => a.accountType === 'SYSTEM' || (a.accountName && a.accountName.toLowerCase() === 'cash'));
+  if (systemCash) return systemCash;
+
+  return accounts[0] || null;
 }
 
 export async function adjustLocalAccountBalance(accountId, amountChange, isSynced = false) {
   const store = getStoredData();
   const accounts = store.data.accounts || [];
-  const index = accounts.findIndex(a => a.id === accountId);
-  if (index !== -1) {
-    const updatedBalance = parseFloat(accounts[index].currentBalance || 0) + amountChange;
-    accounts[index].currentBalance = updatedBalance;
+  const targetAcc = resolveAccount(accounts, accountId);
+  if (targetAcc) {
+    const updatedBalance = parseFloat(targetAcc.currentBalance || 0) + amountChange;
+    targetAcc.currentBalance = updatedBalance;
     store.data.accounts = accounts;
     saveStoredData(store);
+
+    if (!isSynced) {
+      try {
+        enqueueOperation({
+          entityType: 'ACCOUNT',
+          operationType: 'UPDATE',
+          entityId: targetAcc.id,
+          payload: targetAcc,
+        });
+      } catch (e) {
+        console.warn('[db] enqueueOperation error:', e);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial-data-changed'));
+    }
   }
 }
 
 export async function deleteLocalAccount(id, isSynced = false) {
   const store = getStoredData();
   const accounts = store.data.accounts || [];
-  const acc = accounts.find(a => a.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const acc = accounts.find(a => String(a.id).trim().toLowerCase() === targetId);
   
   // Enforcement: default cash account cannot be deleted
-  if (acc && (acc.accountType === 'SYSTEM' || acc.locked === true || acc.accountName === 'Cash')) {
+  if (acc && (acc.accountType === 'SYSTEM' || acc.locked === true || (acc.accountName && acc.accountName.toLowerCase() === 'cash'))) {
     throw new Error('Default Cash account cannot be deleted');
   }
 
   // Complete removal from array (local always wins)
-  store.data.accounts = accounts.filter(a => a.id !== id);
+  store.data.accounts = accounts.filter(a => String(a.id).trim().toLowerCase() !== targetId);
 
   // Complete removal of dependent transactions
-  store.data.expenses = (store.data.expenses || []).filter(e => e.accountId !== id);
-  store.data.incomes = (store.data.incomes || []).filter(i => i.accountId !== id);
+  store.data.expenses = (store.data.expenses || []).filter(e => String(e.accountId).trim().toLowerCase() !== targetId);
+  store.data.incomes = (store.data.incomes || []).filter(i => String(i.accountId).trim().toLowerCase() !== targetId);
 
   saveStoredData(store);
 
@@ -243,16 +291,23 @@ export async function deleteLocalAccount(id, isSynced = false) {
       console.warn('[db] enqueueOperation error:', e);
     }
   }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
+  }
 }
 
 // Expense Helpers
 export async function getLocalExpenses(params = {}) {
   const { page = 0, size = 10, search = '', category = '', accountId = '' } = params;
+  const pageNum = Math.max(0, parseInt(page, 10) || 0);
+  const sizeNum = Math.max(1, parseInt(size, 10) || 10);
+
   const store = getStoredData();
   let records = (store.data.expenses || []).filter(e => e.deleted !== true && !isSelfTransfer(e));
 
   if (search) {
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     records = records.filter(r => 
       (r.description || '').toLowerCase().includes(q) || 
       (r.notes || '').toLowerCase().includes(q)
@@ -269,25 +324,27 @@ export async function getLocalExpenses(params = {}) {
   }
 
   if (accountId) {
-    records = records.filter(r => r.accountId === accountId);
+    const targetAccId = String(accountId).trim().toLowerCase();
+    records = records.filter(r => String(r.accountId).trim().toLowerCase() === targetAccId);
   }
 
   // Deterministic sort: transactionDateTime DESC then id DESC BEFORE slicing
   records = sortTransactions(records);
 
-  const content = records.slice(page * size, (page + 1) * size);
+  const content = records.slice(pageNum * sizeNum, (pageNum + 1) * sizeNum);
   return {
     content,
     totalElements: records.length,
-    totalPages: Math.ceil(records.length / size),
-    size,
-    number: page
+    totalPages: Math.ceil(records.length / sizeNum),
+    size: sizeNum,
+    number: pageNum
   };
 }
 
 export async function getLocalExpense(id) {
   const store = getStoredData();
-  const exp = (store.data.expenses || []).find(e => e.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const exp = (store.data.expenses || []).find(e => String(e.id).trim().toLowerCase() === targetId);
   if (!exp || exp.deleted) return null;
   return exp;
 }
@@ -295,14 +352,58 @@ export async function getLocalExpense(id) {
 export async function saveLocalExpense(expenseData, isSynced = false) {
   const store = getStoredData();
   const id = expenseData.id || generateUUID();
+  const targetId = String(id).trim().toLowerCase();
   const expenses = store.data.expenses || [];
-  const index = expenses.findIndex(e => e.id === id);
+  const accounts = store.data.accounts || [];
+  const index = expenses.findIndex(e => String(e.id).trim().toLowerCase() === targetId);
 
-  let accountName = '';
-  if (expenseData.accountId) {
-    const acc = (store.data.accounts || []).find(a => a.id === expenseData.accountId);
-    if (acc) {
-      accountName = acc.accountName;
+  // Robust canonical account resolution
+  let targetAcc = resolveAccount(accounts, expenseData.accountId, expenseData.accountName);
+  if (!targetAcc) {
+    targetAcc = {
+      id: generateUUID(),
+      accountName: 'Cash',
+      accountType: 'SYSTEM',
+      locked: true,
+      currentBalance: 0,
+      deleted: false
+    };
+    accounts.push(targetAcc);
+  }
+
+  const resolvedAccountId = targetAcc.id;
+  const resolvedAccountName = targetAcc.accountName;
+  const amount = parseFloat(expenseData.amount || 0);
+
+  const isNew = index === -1;
+  let oldAmount = 0;
+  let oldAccountId = null;
+
+  if (!isNew) {
+    oldAmount = parseFloat(expenses[index].amount || 0);
+    oldAccountId = expenses[index].accountId;
+  }
+
+  // Atomically update account balances in store
+  if (isNew) {
+    const accIdx = accounts.findIndex(a => String(a.id).trim().toLowerCase() === String(resolvedAccountId).trim().toLowerCase());
+    if (accIdx !== -1) {
+      accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) - amount;
+    }
+  } else {
+    const oldAccIdx = accounts.findIndex(a => String(a.id).trim().toLowerCase() === String(oldAccountId).trim().toLowerCase());
+    const newAccIdx = accounts.findIndex(a => String(a.id).trim().toLowerCase() === String(resolvedAccountId).trim().toLowerCase());
+
+    if (oldAccIdx !== -1 && oldAccIdx === newAccIdx) {
+      const diff = amount - oldAmount;
+      accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) - diff;
+    } else {
+      if (oldAccIdx !== -1) {
+        accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) + oldAmount;
+      }
+      if (newAccIdx !== -1) {
+        accounts[newAccIdx].currentBalance = parseFloat(accounts[newAccIdx].currentBalance || 0) - amount;
+      }
     }
   }
 
@@ -317,60 +418,22 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
   const updatedData = {
     ...expenseData,
     id,
-    accountName,
-    amount: parseFloat(expenseData.amount || 0),
+    accountId: resolvedAccountId,
+    accountName: resolvedAccountName,
+    amount,
     expenseDate: expenseData.expenseDate || (transactionDateTime ? transactionDateTime.split('T')[0] : getLocalDateString()),
     transactionDateTime,
-    createdAt
+    createdAt,
+    deleted: false
   };
 
-  const isNew = index === -1;
-  let oldAmount = 0;
-  let oldAccountId = null;
-  if (!isNew) {
-    oldAmount = parseFloat(expenses[index].amount || 0);
-    oldAccountId = expenses[index].accountId;
-    expenses[index] = {
-      ...expenses[index],
-      ...updatedData,
-      deleted: false
-    };
+  if (isNew) {
+    expenses.push(updatedData);
   } else {
-    expenses.push({
-      ...updatedData,
-      deleted: false
-    });
+    expenses[index] = updatedData;
   }
 
   store.data.expenses = expenses;
-
-  // Adjust account balances atomically in store
-  const accounts = store.data.accounts || [];
-  if (isNew) {
-    const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
-    if (accIdx !== -1) {
-      accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) - updatedData.amount;
-    }
-  } else {
-    if (oldAccountId && oldAccountId !== updatedData.accountId) {
-      // Account changed: refund the old account, debit the new account
-      const oldAccIdx = accounts.findIndex(a => a.id === oldAccountId);
-      if (oldAccIdx !== -1) {
-        accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) + oldAmount;
-      }
-      const newAccIdx = accounts.findIndex(a => a.id === updatedData.accountId);
-      if (newAccIdx !== -1) {
-        accounts[newAccIdx].currentBalance = parseFloat(accounts[newAccIdx].currentBalance || 0) - updatedData.amount;
-      }
-    } else {
-      // Same account: apply difference
-      const diff = updatedData.amount - oldAmount;
-      const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
-      if (accIdx !== -1) {
-        accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) - diff;
-      }
-    }
-  }
   store.data.accounts = accounts;
   saveStoredData(store);
 
@@ -382,9 +445,23 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
         entityId: id,
         payload: updatedData,
       });
+
+      const updatedAcc = accounts.find(a => String(a.id).trim().toLowerCase() === String(resolvedAccountId).trim().toLowerCase());
+      if (updatedAcc) {
+        enqueueOperation({
+          entityType: 'ACCOUNT',
+          operationType: 'UPDATE',
+          entityId: updatedAcc.id,
+          payload: updatedAcc,
+        });
+      }
     } catch (e) {
       console.warn('[db] enqueueOperation error:', e);
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
   }
 
   return updatedData;
@@ -393,7 +470,8 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
 export async function deleteLocalExpense(id, isSynced = false) {
   const store = getStoredData();
   const expenses = store.data.expenses || [];
-  const index = expenses.findIndex(e => e.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const index = expenses.findIndex(e => String(e.id).trim().toLowerCase() === targetId);
   if (index !== -1) {
     const exp = expenses[index];
     expenses.splice(index, 1);
@@ -412,19 +490,26 @@ export async function deleteLocalExpense(id, isSynced = false) {
       }
     }
 
-    // Refund
+    // Refund account balance
     await adjustLocalAccountBalance(exp.accountId, parseFloat(exp.amount || 0));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial-data-changed'));
+    }
   }
 }
 
 // Income Helpers
 export async function getLocalIncomes(params = {}) {
   const { page = 0, size = 10, search = '', accountId = '' } = params;
+  const pageNum = Math.max(0, parseInt(page, 10) || 0);
+  const sizeNum = Math.max(1, parseInt(size, 10) || 10);
+
   const store = getStoredData();
   let records = (store.data.incomes || []).filter(i => i.deleted !== true && !isSelfTransfer(i));
 
   if (search) {
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     records = records.filter(r => 
       (r.description || '').toLowerCase().includes(q) || 
       (r.notes || '').toLowerCase().includes(q)
@@ -432,25 +517,27 @@ export async function getLocalIncomes(params = {}) {
   }
 
   if (accountId) {
-    records = records.filter(r => r.accountId === accountId);
+    const targetAccId = String(accountId).trim().toLowerCase();
+    records = records.filter(r => String(r.accountId).trim().toLowerCase() === targetAccId);
   }
 
   // Deterministic sort: transactionDateTime DESC then id DESC BEFORE slicing
   records = sortTransactions(records);
 
-  const content = records.slice(page * size, (page + 1) * size);
+  const content = records.slice(pageNum * sizeNum, (pageNum + 1) * sizeNum);
   return {
     content,
     totalElements: records.length,
-    totalPages: Math.ceil(records.length / size),
-    size,
-    number: page
+    totalPages: Math.ceil(records.length / sizeNum),
+    size: sizeNum,
+    number: pageNum
   };
 }
 
 export async function getLocalIncome(id) {
   const store = getStoredData();
-  const inc = (store.data.incomes || []).find(i => i.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const inc = (store.data.incomes || []).find(i => String(i.id).trim().toLowerCase() === targetId);
   if (!inc || inc.deleted) return null;
   return inc;
 }
@@ -458,14 +545,58 @@ export async function getLocalIncome(id) {
 export async function saveLocalIncome(incomeData, isSynced = false) {
   const store = getStoredData();
   const id = incomeData.id || generateUUID();
+  const targetId = String(id).trim().toLowerCase();
   const incomes = store.data.incomes || [];
-  const index = incomes.findIndex(i => i.id === id);
+  const accounts = store.data.accounts || [];
+  const index = incomes.findIndex(i => String(i.id).trim().toLowerCase() === targetId);
 
-  let accountName = '';
-  if (incomeData.accountId) {
-    const acc = (store.data.accounts || []).find(a => a.id === incomeData.accountId);
-    if (acc) {
-      accountName = acc.accountName;
+  // Robust canonical account resolution
+  let targetAcc = resolveAccount(accounts, incomeData.accountId, incomeData.accountName);
+  if (!targetAcc) {
+    targetAcc = {
+      id: generateUUID(),
+      accountName: 'Cash',
+      accountType: 'SYSTEM',
+      locked: true,
+      currentBalance: 0,
+      deleted: false
+    };
+    accounts.push(targetAcc);
+  }
+
+  const resolvedAccountId = targetAcc.id;
+  const resolvedAccountName = targetAcc.accountName;
+  const amount = parseFloat(incomeData.amount || 0);
+
+  const isNew = index === -1;
+  let oldAmount = 0;
+  let oldAccountId = null;
+
+  if (!isNew) {
+    oldAmount = parseFloat(incomes[index].amount || 0);
+    oldAccountId = incomes[index].accountId;
+  }
+
+  // Atomically update account balances in store
+  if (isNew) {
+    const accIdx = accounts.findIndex(a => String(a.id).trim().toLowerCase() === String(resolvedAccountId).trim().toLowerCase());
+    if (accIdx !== -1) {
+      accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) + amount;
+    }
+  } else {
+    const oldAccIdx = accounts.findIndex(a => String(a.id).trim().toLowerCase() === String(oldAccountId).trim().toLowerCase());
+    const newAccIdx = accounts.findIndex(a => String(a.id).trim().toLowerCase() === String(resolvedAccountId).trim().toLowerCase());
+
+    if (oldAccIdx !== -1 && oldAccIdx === newAccIdx) {
+      const diff = amount - oldAmount;
+      accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) + diff;
+    } else {
+      if (oldAccIdx !== -1) {
+        accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) - oldAmount;
+      }
+      if (newAccIdx !== -1) {
+        accounts[newAccIdx].currentBalance = parseFloat(accounts[newAccIdx].currentBalance || 0) + amount;
+      }
     }
   }
 
@@ -482,60 +613,22 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
   const updatedData = {
     ...incomeData,
     id,
-    accountName,
-    amount: parseFloat(incomeData.amount || 0),
-    incomeDate: incomeData.incomeDate,
+    accountId: resolvedAccountId,
+    accountName: resolvedAccountName,
+    amount,
+    incomeDate: incomeData.incomeDate || (transactionDateTime ? transactionDateTime.split('T')[0] : getLocalDateString()),
     transactionDateTime,
-    createdAt
+    createdAt,
+    deleted: false
   };
 
-  const isNew = index === -1;
-  let oldAmount = 0;
-  let oldAccountId = null;
-  if (!isNew) {
-    oldAmount = parseFloat(incomes[index].amount || 0);
-    oldAccountId = incomes[index].accountId;
-    incomes[index] = {
-      ...incomes[index],
-      ...updatedData,
-      deleted: false
-    };
+  if (isNew) {
+    incomes.push(updatedData);
   } else {
-    incomes.push({
-      ...updatedData,
-      deleted: false
-    });
+    incomes[index] = updatedData;
   }
 
   store.data.incomes = incomes;
-
-  // Adjust account balances atomically in store
-  const accounts = store.data.accounts || [];
-  if (isNew) {
-    const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
-    if (accIdx !== -1) {
-      accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) + updatedData.amount;
-    }
-  } else {
-    if (oldAccountId && oldAccountId !== updatedData.accountId) {
-      // Account changed: deduct old amount from old account, credit new amount to new account
-      const oldAccIdx = accounts.findIndex(a => a.id === oldAccountId);
-      if (oldAccIdx !== -1) {
-        accounts[oldAccIdx].currentBalance = parseFloat(accounts[oldAccIdx].currentBalance || 0) - oldAmount;
-      }
-      const newAccIdx = accounts.findIndex(a => a.id === updatedData.accountId);
-      if (newAccIdx !== -1) {
-        accounts[newAccIdx].currentBalance = parseFloat(accounts[newAccIdx].currentBalance || 0) + updatedData.amount;
-      }
-    } else {
-      // Same account: apply difference
-      const diff = updatedData.amount - oldAmount;
-      const accIdx = accounts.findIndex(a => a.id === updatedData.accountId);
-      if (accIdx !== -1) {
-        accounts[accIdx].currentBalance = parseFloat(accounts[accIdx].currentBalance || 0) + diff;
-      }
-    }
-  }
   store.data.accounts = accounts;
   saveStoredData(store);
 
@@ -547,9 +640,23 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
         entityId: id,
         payload: updatedData,
       });
+
+      const updatedAcc = accounts.find(a => String(a.id).trim().toLowerCase() === String(resolvedAccountId).trim().toLowerCase());
+      if (updatedAcc) {
+        enqueueOperation({
+          entityType: 'ACCOUNT',
+          operationType: 'UPDATE',
+          entityId: updatedAcc.id,
+          payload: updatedAcc,
+        });
+      }
     } catch (e) {
       console.warn('[db] enqueueOperation error:', e);
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
   }
 
   return updatedData;
@@ -558,7 +665,8 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
 export async function deleteLocalIncome(id, isSynced = false) {
   const store = getStoredData();
   const incomes = store.data.incomes || [];
-  const index = incomes.findIndex(i => i.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const index = incomes.findIndex(i => String(i.id).trim().toLowerCase() === targetId);
   if (index !== -1) {
     const inc = incomes[index];
     incomes.splice(index, 1);
@@ -577,8 +685,12 @@ export async function deleteLocalIncome(id, isSynced = false) {
       }
     }
 
-    // Deduct
+    // Deduct refunded amount
     await adjustLocalAccountBalance(inc.accountId, -parseFloat(inc.amount || 0));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('financial-data-changed'));
+    }
   }
 }
 
@@ -701,9 +813,16 @@ export async function saveLocalTransfer(transferData, isSynced = false) {
   const amount = parseFloat(transferData.amount || 0);
   const today = transferData.date || getLocalDateString();
 
+  const fromAcc = resolveAccount(store.data.accounts || [], transferData.fromAccountId);
+  const toAcc = resolveAccount(store.data.accounts || [], transferData.toAccountId);
+  const fromId = fromAcc ? fromAcc.id : transferData.fromAccountId;
+  const toId = toAcc ? toAcc.id : transferData.toAccountId;
+
   const updatedTransfer = {
     ...transferData,
     id,
+    fromAccountId: fromId,
+    toAccountId: toId,
     amount,
     date: today,
     deleted: false
@@ -727,8 +846,12 @@ export async function saveLocalTransfer(transferData, isSynced = false) {
   }
 
   // Adjust account balances directly (without creating expenses/incomes)
-  await adjustLocalAccountBalance(transferData.fromAccountId, -amount);
-  await adjustLocalAccountBalance(transferData.toAccountId, amount);
+  await adjustLocalAccountBalance(fromId, -amount);
+  await adjustLocalAccountBalance(toId, amount);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financial-data-changed'));
+  }
 
   return updatedTransfer;
 }

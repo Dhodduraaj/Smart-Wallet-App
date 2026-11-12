@@ -48,6 +48,8 @@ export async function sync() {
       syncedAt: new Date().toISOString(),
       payload: {
         accounts: store.data.accounts || [],
+        expenses: rawExpenses,
+        incomes: rawIncomes,
         transactions,
         categories,
         reminders: store.data.reminders || [],
@@ -63,15 +65,18 @@ export async function sync() {
     if (response.status === 200) {
       if (response.data && response.data.status === 'exists' && response.data.userId) {
         console.warn(`[Sync Engine] Email already registered under ID ${response.data.userId}. Updating localUserId to match.`);
-        store.localUserId = response.data.userId;
-        saveStoredData(store);
+        const freshStore = getStoredData();
+        freshStore.localUserId = response.data.userId;
+        saveStoredData(freshStore);
         isSyncing = false; // Reset sync flag
         return sync(); // Retry sync with the correct ID
       }
-      store.lastSync = new Date().toISOString();
-      saveStoredData(store);
+      const freshStore = getStoredData();
+      freshStore.lastSync = new Date().toISOString();
+      saveStoredData(freshStore);
       console.info('[Sync Engine] Background sync completed successfully.');
       window.dispatchEvent(new CustomEvent('sync-completed'));
+      window.dispatchEvent(new CustomEvent('financial-data-changed'));
     }
   } catch (err) {
     console.error('[Sync Engine] Background sync failed:', err);

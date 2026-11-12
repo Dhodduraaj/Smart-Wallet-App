@@ -58,8 +58,10 @@ const Accounts = () => {
       fetchAccounts();
     };
     window.addEventListener('sync-completed', handleSync);
+    window.addEventListener('financial-data-changed', handleSync);
     return () => {
       window.removeEventListener('sync-completed', handleSync);
+      window.removeEventListener('financial-data-changed', handleSync);
     };
   }, []);
 

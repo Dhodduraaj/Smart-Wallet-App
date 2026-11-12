@@ -18,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -211,8 +212,10 @@ public class AccountRecoveryService {
 
     /**
      * Process Batch Operations from the Persistent Sync Queue
-     * Idempotently upserts/deletes records in relational tables and updates backup snapshot.
+     * Atomically upserts/deletes records in relational tables, maintains transactional
+     * balance consistency on accounts, and updates backup snapshot.
      */
+    @Transactional
     public ResponseEntity<?> processBatchSync(BatchSyncRequest request) {
         if (request == null || request.getUserId() == null || request.getOperations() == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "userId and operations are required"));
@@ -261,7 +264,21 @@ public class AccountRecoveryService {
                 } else if ("EXPENSE".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
                         if (hasExpensesTable && isPostgres) {
-                            jdbcTemplate.update("DELETE FROM expenses WHERE id = ? AND user_id = ?", entityId, userId);
+                            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                                    "SELECT amount, account_id FROM expenses WHERE id = ? AND user_id = ?",
+                                    entityId, userId
+                            );
+                            if (!existing.isEmpty()) {
+                                BigDecimal oldAmount = getBigDecimal(existing.get(0).get("amount"), BigDecimal.ZERO);
+                                UUID oldAccId = parseUUID(existing.get(0).get("account_id"));
+                                jdbcTemplate.update("DELETE FROM expenses WHERE id = ? AND user_id = ?", entityId, userId);
+                                if (hasAccountsTable && oldAccId != null) {
+                                    jdbcTemplate.update(
+                                            "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                                            oldAmount, oldAccId, userId
+                                    );
+                                }
+                            }
                         }
                     } else {
                         BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
@@ -272,28 +289,94 @@ public class AccountRecoveryService {
                         String paymentMode = getString(payload.get("paymentMode"), "CASH");
                         UUID accId = parseUUID(payload.get("accountId"));
                         if (accId == null) accId = defaultCashId;
+
+                        // Ensure target account exists
+                        if (hasAccountsTable && isPostgres) {
+                            List<UUID> matched = jdbcTemplate.query(
+                                    "SELECT id FROM accounts WHERE id = ? AND user_id = ? LIMIT 1",
+                                    (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                                    accId, userId
+                            );
+                            if (matched.isEmpty()) {
+                                accId = defaultCashId;
+                            }
+                        }
+
                         Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
 
                         if (hasExpensesTable && isPostgres) {
-                            jdbcTemplate.update(
-                                    "INSERT INTO expenses (id, amount, category, created_at, description, expense_date, notes, payment_mode, account_id, user_id) " +
-                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-                                    "ON CONFLICT (id) DO UPDATE SET " +
-                                    "amount = EXCLUDED.amount, " +
-                                    "category = EXCLUDED.category, " +
-                                    "description = EXCLUDED.description, " +
-                                    "expense_date = EXCLUDED.expense_date, " +
-                                    "notes = EXCLUDED.notes, " +
-                                    "payment_mode = EXCLUDED.payment_mode, " +
-                                    "account_id = EXCLUDED.account_id",
-                                    entityId, amount, category, createdAt, description, expenseDate, notes, paymentMode, accId, userId
+                            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                                    "SELECT amount, account_id FROM expenses WHERE id = ? AND user_id = ?",
+                                    entityId, userId
                             );
+
+                            if (existing.isEmpty()) {
+                                // Insert new expense
+                                jdbcTemplate.update(
+                                        "INSERT INTO expenses (id, amount, category, created_at, description, expense_date, notes, payment_mode, account_id, user_id) " +
+                                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        entityId, amount, category, createdAt, description, expenseDate, notes, paymentMode, accId, userId
+                                );
+                                // Deduct from account balance atomically
+                                if (hasAccountsTable) {
+                                    jdbcTemplate.update(
+                                            "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ? AND user_id = ?",
+                                            amount, accId, userId
+                                    );
+                                }
+                            } else {
+                                BigDecimal oldAmount = getBigDecimal(existing.get(0).get("amount"), BigDecimal.ZERO);
+                                UUID oldAccId = parseUUID(existing.get(0).get("account_id"));
+
+                                jdbcTemplate.update(
+                                        "UPDATE expenses SET amount = ?, category = ?, description = ?, expense_date = ?, notes = ?, payment_mode = ?, account_id = ? " +
+                                        "WHERE id = ? AND user_id = ?",
+                                        amount, category, description, expenseDate, notes, paymentMode, accId, entityId, userId
+                                );
+
+                                if (hasAccountsTable) {
+                                    if (oldAccId != null && oldAccId.equals(accId)) {
+                                        BigDecimal diff = amount.subtract(oldAmount);
+                                        if (diff.compareTo(BigDecimal.ZERO) != 0) {
+                                            jdbcTemplate.update(
+                                                    "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ? AND user_id = ?",
+                                                    diff, accId, userId
+                                            );
+                                        }
+                                    } else {
+                                        if (oldAccId != null) {
+                                            jdbcTemplate.update(
+                                                    "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                                                    oldAmount, oldAccId, userId
+                                            );
+                                        }
+                                        jdbcTemplate.update(
+                                                "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ? AND user_id = ?",
+                                                amount, accId, userId
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 } else if ("INCOME".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
                         if (hasIncomesTable && isPostgres) {
-                            jdbcTemplate.update("DELETE FROM incomes WHERE id = ? AND user_id = ?", entityId, userId);
+                            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                                    "SELECT amount, account_id FROM incomes WHERE id = ? AND user_id = ?",
+                                    entityId, userId
+                            );
+                            if (!existing.isEmpty()) {
+                                BigDecimal oldAmount = getBigDecimal(existing.get(0).get("amount"), BigDecimal.ZERO);
+                                UUID oldAccId = parseUUID(existing.get(0).get("account_id"));
+                                jdbcTemplate.update("DELETE FROM incomes WHERE id = ? AND user_id = ?", entityId, userId);
+                                if (hasAccountsTable && oldAccId != null) {
+                                    jdbcTemplate.update(
+                                            "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ? AND user_id = ?",
+                                            oldAmount, oldAccId, userId
+                                    );
+                                }
+                            }
                         }
                     } else {
                         BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
@@ -302,21 +385,87 @@ public class AccountRecoveryService {
                         String notes = getString(payload.get("notes"), null);
                         UUID accId = parseUUID(payload.get("accountId"));
                         if (accId == null) accId = defaultCashId;
+
+                        if (hasAccountsTable && isPostgres) {
+                            List<UUID> matched = jdbcTemplate.query(
+                                    "SELECT id FROM accounts WHERE id = ? AND user_id = ? LIMIT 1",
+                                    (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                                    accId, userId
+                            );
+                            if (matched.isEmpty()) {
+                                accId = defaultCashId;
+                            }
+                        }
+
                         Timestamp createdAt = parseTimestamp(payload.get("createdAt"));
 
                         if (hasIncomesTable && isPostgres) {
-                            jdbcTemplate.update(
-                                    "INSERT INTO incomes (id, amount, created_at, description, income_date, notes, account_id, user_id) " +
-                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-                                    "ON CONFLICT (id) DO UPDATE SET " +
-                                    "amount = EXCLUDED.amount, " +
-                                    "description = EXCLUDED.description, " +
-                                    "income_date = EXCLUDED.income_date, " +
-                                    "notes = EXCLUDED.notes, " +
-                                    "account_id = EXCLUDED.account_id",
-                                    entityId, amount, createdAt, description, incomeDate, notes, accId, userId
+                            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                                    "SELECT amount, account_id FROM incomes WHERE id = ? AND user_id = ?",
+                                    entityId, userId
                             );
+
+                            if (existing.isEmpty()) {
+                                jdbcTemplate.update(
+                                        "INSERT INTO incomes (id, amount, created_at, description, income_date, notes, account_id, user_id) " +
+                                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        entityId, amount, createdAt, description, incomeDate, notes, accId, userId
+                                );
+                                if (hasAccountsTable) {
+                                    jdbcTemplate.update(
+                                            "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                                            amount, accId, userId
+                                    );
+                                }
+                            } else {
+                                BigDecimal oldAmount = getBigDecimal(existing.get(0).get("amount"), BigDecimal.ZERO);
+                                UUID oldAccId = parseUUID(existing.get(0).get("account_id"));
+
+                                jdbcTemplate.update(
+                                        "UPDATE incomes SET amount = ?, description = ?, income_date = ?, notes = ?, account_id = ? " +
+                                        "WHERE id = ? AND user_id = ?",
+                                        amount, description, incomeDate, notes, accId, entityId, userId
+                                );
+
+                                if (hasAccountsTable) {
+                                    if (oldAccId != null && oldAccId.equals(accId)) {
+                                        BigDecimal diff = amount.subtract(oldAmount);
+                                        if (diff.compareTo(BigDecimal.ZERO) != 0) {
+                                            jdbcTemplate.update(
+                                                    "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                                                    diff, accId, userId
+                                            );
+                                        }
+                                    } else {
+                                        if (oldAccId != null) {
+                                            jdbcTemplate.update(
+                                                    "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ? AND user_id = ?",
+                                                    oldAmount, oldAccId, userId
+                                            );
+                                        }
+                                        jdbcTemplate.update(
+                                                "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                                                amount, accId, userId
+                                        );
+                                    }
+                                }
+                            }
                         }
+                    }
+                } else if ("TRANSFER".equals(entityType)) {
+                    BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
+                    UUID fromAccId = parseUUID(payload.get("fromAccountId"));
+                    UUID toAccId = parseUUID(payload.get("toAccountId"));
+
+                    if (hasAccountsTable && isPostgres && fromAccId != null && toAccId != null) {
+                        jdbcTemplate.update(
+                                "UPDATE accounts SET current_balance = current_balance - ? WHERE id = ? AND user_id = ?",
+                                amount, fromAccId, userId
+                        );
+                        jdbcTemplate.update(
+                                "UPDATE accounts SET current_balance = current_balance + ? WHERE id = ? AND user_id = ?",
+                                amount, toAccId, userId
+                        );
                     }
                 } else if ("REMINDER".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
@@ -390,6 +539,7 @@ public class AccountRecoveryService {
     }
 
     @SuppressWarnings("unchecked")
+    @Transactional
     public void syncRelationalTables(UUID userId, Map<String, Object> payload, Map<String, Integer> syncCounts) {
         List<Map<String, Object>> accounts = extractList(payload, "accounts");
         Set<UUID> validAccountIds = new HashSet<>();
@@ -517,6 +667,7 @@ public class AccountRecoveryService {
 
     private UUID parseUUID(Object val) {
         if (val == null) return null;
+        if (val instanceof UUID) return (UUID) val;
         try {
             return UUID.fromString(String.valueOf(val).trim());
         } catch (Exception e) {
@@ -533,6 +684,8 @@ public class AccountRecoveryService {
     private BigDecimal getBigDecimal(Object val, BigDecimal defaultValue) {
         if (val == null) return defaultValue;
         try {
+            if (val instanceof BigDecimal) return (BigDecimal) val;
+            if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
             return new BigDecimal(String.valueOf(val).trim());
         } catch (Exception e) {
             return defaultValue;
