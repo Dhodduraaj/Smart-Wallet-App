@@ -100,7 +100,8 @@ const Sidebar = ({ darkMode, toggleDarkMode, onNavigate, onSelfTransferClick }) 
             Smart Wallet
           </Typography>
         </Box>
-        <Box sx={{ mt: 0.5, pl: 0.5 }}>
+        {/* Only shown on Desktop / Website; removed from mobile sidebar */}
+        <Box sx={{ mt: 0.5, pl: 0.5, display: { xs: 'none', md: 'block' } }}>
           <CloudSyncControls compact={false} />
         </Box>
       </Toolbar>

@@ -67,6 +67,7 @@ import {
 } from 'recharts';
 import { toast } from 'react-hot-toast';
 import SkeletonDashboard from '../components/SkeletonDashboard';
+import CloudSyncControls from '../components/CloudSyncControls';
 
 const COLORS = ['#6366f1', '#a855f7', '#10b981', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#14b8a6', '#22c55e', '#6b7280'];
 
@@ -336,16 +337,36 @@ const Dashboard = () => {
       <Box
         sx={{
           display: 'flex',
-          flexDirection: { xs: 'column', sm: 'row' },
+          flexDirection: { xs: 'column', md: 'row' },
           justifyContent: 'space-between',
-          alignItems: { xs: 'stretch', sm: 'center' },
+          alignItems: { xs: 'stretch', md: 'center' },
           gap: { xs: 1.5, sm: 2 },
           mb: { xs: 1.5, sm: 2 },
         }}
       >
-        <Typography variant="h4" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2rem' } }}>
-          Dashboard
-        </Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1.5,
+            flexWrap: { xs: 'wrap', sm: 'nowrap' },
+          }}
+        >
+          <Typography variant="h4" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2rem' } }}>
+            Dashboard
+          </Typography>
+
+          {/* Mobile Only: Placed immediately to the right side of Dashboard heading */}
+          <Box
+            sx={{
+              display: { xs: 'flex', md: 'none' },
+              alignItems: 'center',
+            }}
+          >
+            <CloudSyncControls compact={false} />
+          </Box>
+        </Box>
         <Box
           sx={{
             display: 'flex',

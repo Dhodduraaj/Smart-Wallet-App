@@ -115,20 +115,20 @@ export default function SyncStatusIndicator({ compact = false, isUploading = fal
           variant="outlined"
           onClick={config.clickable ? handleManualSync : undefined}
           sx={{
-            height: 24,
+            height: 28,
             fontSize: '0.72rem',
             fontWeight: 600,
             cursor: config.clickable ? 'pointer' : 'default',
-            borderRadius: '12px',
-            px: compact ? 0.2 : 0.5,
+            borderRadius: '8px',
+            px: compact ? 0.3 : 0.6,
             '& .MuiChip-icon': {
               ml: compact ? '4px' : '4px',
-              mr: compact ? '4px' : '2px',
+              mr: compact ? '4px' : '3px',
             },
             transition: 'all 0.2s ease',
             '&:hover': config.clickable ? {
-              opacity: 0.85,
-              transform: 'scale(1.02)',
+              opacity: 0.9,
+              transform: 'translateY(-1px)',
             } : {},
           }}
         />

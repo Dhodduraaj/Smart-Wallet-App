@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, IconButton, Tooltip, CircularProgress } from '@mui/material';
+import { Box, IconButton, Tooltip, CircularProgress, useTheme } from '@mui/material';
 import { CloudUploadOutlined, CloudDownloadOutlined } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 import { manualUploadToCloud, manualDownloadFromCloud } from '../lib/sync';
@@ -7,6 +7,8 @@ import { getSyncStatus } from '../lib/syncQueue';
 import SyncStatusIndicator from './SyncStatusIndicator';
 
 export default function CloudSyncControls({ compact = false }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [isUploading, setIsUploading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [syncInfo, setSyncInfo] = useState(getSyncStatus());
@@ -78,8 +80,8 @@ export default function CloudSyncControls({ compact = false }) {
   const isBusy = isUploading || isDownloading;
 
   return (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-      {/* Upload Sync Button (Device to Cloud) */}
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+      {/* Upload Sync Button (Device to Cloud) - Contained styling */}
       <Tooltip title={isUploading ? 'Uploading to Cloud...' : 'Upload to Cloud'} arrow>
         <span>
           <IconButton
@@ -88,17 +90,22 @@ export default function CloudSyncControls({ compact = false }) {
             onClick={handleUpload}
             disabled={isBusy}
             sx={{
-              color: isUploading ? 'primary.main' : 'text.secondary',
-              bgcolor: isUploading ? 'action.selected' : 'transparent',
-              p: '6px',
-              minWidth: 32,
-              minHeight: 32,
+              width: 32,
+              height: 32,
               borderRadius: '8px',
+              border: '1px solid',
+              borderColor: isUploading 
+                ? (isDark ? '#818cf8' : '#1a56db')
+                : (isDark ? 'rgba(99, 102, 241, 0.35)' : 'rgba(26, 86, 219, 0.25)'),
+              bgcolor: isUploading
+                ? (isDark ? 'rgba(99, 102, 241, 0.25)' : 'rgba(26, 86, 219, 0.15)')
+                : (isDark ? 'rgba(99, 102, 241, 0.12)' : 'rgba(26, 86, 219, 0.08)'),
+              color: isDark ? '#818cf8' : '#1a56db',
               transition: 'all 0.2s ease',
               '&:hover': {
-                color: 'primary.main',
-                bgcolor: 'action.hover',
-                transform: 'scale(1.05)',
+                bgcolor: isDark ? 'rgba(99, 102, 241, 0.22)' : 'rgba(26, 86, 219, 0.16)',
+                borderColor: isDark ? '#818cf8' : '#1a56db',
+                transform: 'translateY(-1px)',
               },
               '&:disabled': {
                 opacity: isUploading ? 1 : 0.4,
@@ -106,15 +113,15 @@ export default function CloudSyncControls({ compact = false }) {
             }}
           >
             {isUploading ? (
-              <CircularProgress size={18} color="inherit" />
+              <CircularProgress size={16} color="inherit" />
             ) : (
-              <CloudUploadOutlined sx={{ fontSize: 20 }} />
+              <CloudUploadOutlined sx={{ fontSize: 18 }} />
             )}
           </IconButton>
         </span>
       </Tooltip>
 
-      {/* Download Sync Button (Cloud to Device) */}
+      {/* Download Sync Button (Cloud to Device) - Contained styling */}
       <Tooltip title={isDownloading ? 'Downloading from Cloud...' : 'Download from Cloud'} arrow>
         <span>
           <IconButton
@@ -123,17 +130,22 @@ export default function CloudSyncControls({ compact = false }) {
             onClick={handleDownload}
             disabled={isBusy}
             sx={{
-              color: isDownloading ? 'primary.main' : 'text.secondary',
-              bgcolor: isDownloading ? 'action.selected' : 'transparent',
-              p: '6px',
-              minWidth: 32,
-              minHeight: 32,
+              width: 32,
+              height: 32,
               borderRadius: '8px',
+              border: '1px solid',
+              borderColor: isDownloading
+                ? (isDark ? '#34d399' : '#059669')
+                : (isDark ? 'rgba(16, 185, 129, 0.35)' : 'rgba(5, 150, 105, 0.25)'),
+              bgcolor: isDownloading
+                ? (isDark ? 'rgba(16, 185, 129, 0.25)' : 'rgba(5, 150, 105, 0.15)')
+                : (isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(5, 150, 105, 0.08)'),
+              color: isDark ? '#34d399' : '#059669',
               transition: 'all 0.2s ease',
               '&:hover': {
-                color: 'primary.main',
-                bgcolor: 'action.hover',
-                transform: 'scale(1.05)',
+                bgcolor: isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(5, 150, 105, 0.16)',
+                borderColor: isDark ? '#34d399' : '#059669',
+                transform: 'translateY(-1px)',
               },
               '&:disabled': {
                 opacity: isDownloading ? 1 : 0.4,
@@ -141,9 +153,9 @@ export default function CloudSyncControls({ compact = false }) {
             }}
           >
             {isDownloading ? (
-              <CircularProgress size={18} color="inherit" />
+              <CircularProgress size={16} color="inherit" />
             ) : (
-              <CloudDownloadOutlined sx={{ fontSize: 20 }} />
+              <CloudDownloadOutlined sx={{ fontSize: 18 }} />
             )}
           </IconButton>
         </span>
