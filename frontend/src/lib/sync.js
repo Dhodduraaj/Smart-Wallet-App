@@ -237,7 +237,7 @@ export async function manualUnifiedSync() {
   }));
 
   try {
-    // Step 1: Upload pending local operations
+    // Step 1: Upload pending local operations (including local DELETEs)
     const queue = getStoredQueue();
     const pendingOps = queue.filter(q => q.status === 'PENDING' || q.status === 'FAILED');
     const initialPendingCount = pendingOps.length;
@@ -251,10 +251,7 @@ export async function manualUnifiedSync() {
       }
     }
 
-    // Refresh cloud snapshot backup
-    await sync();
-
-    // Step 2 & 3: Pull cloud updates and reconcile
+    // Step 2 & 3: Pull cloud updates and reconcile FIRST so local store has latest cloud tombstones and state
     const userId = store.localUserId || store.data?.profile?.userId || store.data?.profile?.id;
     const email = store.email || store.data?.profile?.email;
 
@@ -270,7 +267,10 @@ export async function manualUnifiedSync() {
       console.warn('[Sync Engine] Pull step encountered issue:', pullErr.message);
     }
 
-    // Step 4: Verify and notify application
+    // Step 4: Refresh cloud snapshot backup with clean reconciled local store
+    await sync();
+
+    // Step 5: Verify and notify application
     window.dispatchEvent(new CustomEvent('sync-completed'));
     window.dispatchEvent(new CustomEvent('financial-data-changed'));
 

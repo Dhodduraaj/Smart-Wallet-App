@@ -13,10 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 @RestController
 @RequestMapping({ "/api/sync", "/sync" })
@@ -241,6 +238,21 @@ public class SyncController {
         // 2. Overlay with latest relational tables (accounts with live balances, expenses, incomes)
         accountRecoveryService.enrichWithRelationalData(targetUserId, finalPayload);
 
+        // 3. Strip any tombstoned items from finalPayload collections so stale JSON backups never resurrect deleted items
+        Object delObj = finalPayload.get("deletedIds");
+        if (delObj instanceof List<?>) {
+            Set<String> deletedIdSet = new HashSet<>();
+            for (Object d : (List<?>) delObj) {
+                if (d != null) deletedIdSet.add(d.toString().trim().toLowerCase());
+            }
+            if (!deletedIdSet.isEmpty()) {
+                sanitizeDeletedList(finalPayload, "expenses", deletedIdSet);
+                sanitizeDeletedList(finalPayload, "incomes", deletedIdSet);
+                sanitizeDeletedList(finalPayload, "reminders", deletedIdSet);
+                sanitizeDeletedList(finalPayload, "transfers", deletedIdSet);
+            }
+        }
+
         Map<String, Object> response = new HashMap<>();
         response.put("userId", targetUserId.toString());
         response.put("email", email);
@@ -248,5 +260,23 @@ public class SyncController {
 
         log.info("Successfully assembled pull payload for user ID: {}", targetUserId);
         return ResponseEntity.ok(response);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void sanitizeDeletedList(Map<String, Object> payload, String key, Set<String> deletedIds) {
+        Object listObj = payload.get(key);
+        if (listObj instanceof List<?>) {
+            List<Map<String, Object>> list = (List<Map<String, Object>>) listObj;
+            List<Map<String, Object>> filtered = new ArrayList<>();
+            for (Map<String, Object> item : list) {
+                if (item != null) {
+                    String id = String.valueOf(item.get("id")).trim().toLowerCase();
+                    if (!deletedIds.contains(id)) {
+                        filtered.add(item);
+                    }
+                }
+            }
+            payload.put(key, filtered);
+        }
     }
 }

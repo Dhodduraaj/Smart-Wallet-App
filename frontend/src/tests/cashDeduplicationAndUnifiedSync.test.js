@@ -179,3 +179,4 @@ assert.strictEqual(updatedSummary.totalBalance, 79000, 'Dashboard total balance 
 console.log('✔ Expense addition updates Cash balance and Dashboard total balance consistently!');
 
 console.log('=== ALL CASH DEDUPLICATION & UNIFIED SYNC TESTS PASSED SUCCESSFULLY! 🚀 ===');
+

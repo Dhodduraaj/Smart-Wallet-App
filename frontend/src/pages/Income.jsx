@@ -3,7 +3,8 @@ import api from '../lib/api';
 import {
   formatTransactionDateTime,
   createTransactionDateTime,
-  updateTransactionDateTime
+  updateTransactionDateTime,
+  getLocalDateString
 } from '../lib/transactionSorter';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
@@ -13,13 +14,6 @@ import {
 } from '@mui/material';
 import { AddOutlined, EditOutlined, DeleteOutlineOutlined, SearchOutlined } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
-
-const getLocalDateString = (d = new Date()) => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 const emptyForm = { accountId: '', description: '', amount: '', incomeDate: getLocalDateString(), notes: '' };
 

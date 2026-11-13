@@ -3,6 +3,8 @@
  * and category aggregation utilities for offline-first operation.
  */
 
+export const APP_TIMEZONE = 'Asia/Kolkata';
+
 export const BUILT_IN_CATEGORIES = [
   'Food',
   'Grocery',
@@ -61,13 +63,17 @@ export function parseDateTime(value) {
     return isNaN(value.getTime()) ? null : value;
   }
   if (typeof value === 'string') {
-    const trimmed = value.trim();
+    let trimmed = value.trim();
     if (!trimmed) return null;
     // YYYY-MM-DD date-only string: construct local Date at midnight
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
       const [y, m, d] = trimmed.split('-').map(n => parseInt(n, 10));
       const localDate = new Date(y, m - 1, d, 0, 0, 0, 0);
       return isNaN(localDate.getTime()) ? null : localDate;
+    }
+    // Handle SQL format "YYYY-MM-DD HH:mm:ss" without timezone offset - treat as UTC
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmed)) {
+      trimmed = trimmed.replace(' ', 'T') + 'Z';
     }
     const d = new Date(trimmed);
     return isNaN(d.getTime()) ? null : d;
@@ -77,93 +83,155 @@ export function parseDateTime(value) {
 }
 
 /**
- * Extracts formatted local date (YYYY-MM-DD) and local time (HH:mm) from a datetime value.
+ * Helper to get local date string YYYY-MM-DD in APP_TIMEZONE (Asia/Kolkata)
+ */
+export function getLocalDateString(d = new Date()) {
+  const dateObj = d instanceof Date ? d : (parseDateTime(d) || new Date());
+  const target = isNaN(dateObj.getTime()) ? new Date() : dateObj;
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: APP_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = formatter.formatToParts(target);
+    const partMap = {};
+    parts.forEach(p => { partMap[p.type] = p.value; });
+    if (partMap.year && partMap.month && partMap.day) {
+      return `${partMap.year}-${partMap.month}-${partMap.day}`;
+    }
+    return formatter.format(target);
+  } catch (e) {
+    const year = target.getFullYear();
+    const month = String(target.getMonth() + 1).padStart(2, '0');
+    const day = String(target.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+}
+
+/**
+ * Extracts formatted local date (YYYY-MM-DD) and local time (HH:mm) from a datetime value
+ * in Indian Standard Time (Asia/Kolkata).
  *
  * @param {string|Date|number} [dateTimeValue]
  * @returns {{ dateStr: string, timeStr: string }}
  */
 export function getLocalDateAndTimeString(dateTimeValue) {
   const d = parseDateTime(dateTimeValue) || new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
+  
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: APP_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(d);
+    const partMap = {};
+    parts.forEach(p => { partMap[p.type] = p.value; });
+    
+    const dateStr = `${partMap.year}-${partMap.month}-${partMap.day}`;
+    // Some runtimes output '24' for midnight; normalize to '00'
+    const rawHour = parseInt(partMap.hour, 10);
+    const normHour = String(rawHour === 24 ? 0 : rawHour).padStart(2, '0');
+    const timeStr = `${normHour}:${partMap.minute}`;
 
-  return {
-    dateStr: `${year}-${month}-${day}`,
-    timeStr: `${hours}:${minutes}`
-  };
+    return { dateStr, timeStr };
+  } catch (e) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+
+    return {
+      dateStr: `${year}-${month}-${day}`,
+      timeStr: `${hours}:${minutes}`
+    };
+  }
 }
 
 /**
  * Combines a local date string (YYYY-MM-DD) and a local time string (HH:mm or HH:mm:ss)
- * into a canonical ISO 8601 string representing that exact instant in the device's local timezone.
+ * representing an instant in Indian Standard Time (Asia/Kolkata, UTC+05:30)
+ * into a canonical ISO 8601 UTC string (...Z).
  *
  * Preserves seconds and milliseconds from originalIsoString if available and minute was not altered.
  *
  * @param {string} dateStr - Date in YYYY-MM-DD format
  * @param {string} [timeStr] - Time in HH:mm or HH:mm:ss format
  * @param {string|Date} [originalIsoString] - Optional original timestamp to preserve seconds/ms
- * @returns {string} Canonical ISO 8601 string
+ * @returns {string} Canonical ISO 8601 UTC string ending in 'Z'
  */
 export function combineDateAndTime(dateStr, timeStr, originalIsoString) {
-  const now = new Date();
-  let y = now.getFullYear();
-  let m = now.getMonth();
-  let d = now.getDate();
-
-  if (dateStr && typeof dateStr === 'string') {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-      y = parseInt(parts[0], 10);
-      m = parseInt(parts[1], 10) - 1;
-      d = parseInt(parts[2], 10);
-    }
+  let y, m, d;
+  if (dateStr && typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+    const parts = dateStr.trim().split('-');
+    y = parseInt(parts[0], 10);
+    m = parseInt(parts[1], 10);
+    d = parseInt(parts[2], 10);
+  } else {
+    const nowParts = getLocalDateAndTimeString(new Date());
+    const parts = nowParts.dateStr.split('-');
+    y = parseInt(parts[0], 10);
+    m = parseInt(parts[1], 10);
+    d = parseInt(parts[2], 10);
   }
 
-  let hh = now.getHours();
-  let mm = now.getMinutes();
-  let ss = now.getSeconds();
-  let ms = now.getMilliseconds();
+  let hh = 12;
+  let mm = 0;
+  let ss = 0;
+  let ms = 0;
 
   if (timeStr && typeof timeStr === 'string') {
-    const timeParts = timeStr.split(':');
+    const timeParts = timeStr.trim().split(':');
     if (timeParts.length >= 2) {
       hh = parseInt(timeParts[0], 10) || 0;
       mm = parseInt(timeParts[1], 10) || 0;
       if (timeParts.length >= 3) {
         ss = parseInt(timeParts[2], 10) || 0;
-        ms = 0;
-      } else {
-        // UI provided minute precision (HH:mm); check if original had matching hour & minute
-        let preserved = false;
-        if (originalIsoString) {
-          const orig = parseDateTime(originalIsoString);
-          if (orig && orig.getHours() === hh && orig.getMinutes() === mm) {
-            ss = orig.getSeconds();
-            ms = orig.getMilliseconds();
-            preserved = true;
-          }
-        }
-        if (!preserved) {
-          ss = 0;
-          ms = 0;
-        }
       }
     }
   } else if (originalIsoString) {
-    const orig = parseDateTime(originalIsoString);
-    if (orig) {
-      hh = orig.getHours();
-      mm = orig.getMinutes();
-      ss = orig.getSeconds();
-      ms = orig.getMilliseconds();
+    const origParts = getLocalDateAndTimeString(originalIsoString);
+    if (origParts && origParts.timeStr) {
+      const parts = origParts.timeStr.split(':');
+      hh = parseInt(parts[0], 10) || 0;
+      mm = parseInt(parts[1], 10) || 0;
     }
+  } else {
+    const nowParts = getLocalDateAndTimeString(new Date());
+    const parts = nowParts.timeStr.split(':');
+    hh = parseInt(parts[0], 10) || 0;
+    mm = parseInt(parts[1], 10) || 0;
   }
 
-  const combined = new Date(y, m, d, hh, mm, ss, ms);
-  return !isNaN(combined.getTime()) ? combined.toISOString() : now.toISOString();
+  // Preserve milliseconds/seconds from originalIsoString if hour and minute match in IST
+  if (originalIsoString) {
+    try {
+      const origDate = parseDateTime(originalIsoString);
+      if (origDate && !isNaN(origDate.getTime())) {
+        const origIst = getLocalDateAndTimeString(origDate);
+        const [origH, origM] = origIst.timeStr.split(':').map(Number);
+        if (origH === hh && origM === mm) {
+          ss = origDate.getUTCSeconds();
+          ms = origDate.getUTCMilliseconds();
+        }
+      }
+    } catch (e) {}
+  }
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const pad3 = n => String(n).padStart(3, '0');
+
+  // Construct ISO 8601 string with Indian Standard Time offset (+05:30)
+  const istString = `${y}-${pad2(m)}-${pad2(d)}T${pad2(hh)}:${pad2(mm)}:${pad2(ss)}.${pad3(ms)}+05:30`;
+  const instant = new Date(istString);
+  return !isNaN(instant.getTime()) ? instant.toISOString() : new Date().toISOString();
 }
 
 /**
@@ -224,24 +292,47 @@ export function formatTransactionDateTime(dateTimeValue) {
     return { dateStr: String(dateTimeValue), timeStr: '', fullStr: String(dateTimeValue) };
   }
 
-  // Format: "05 Sep 2026"
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = d.toLocaleString('en-US', { month: 'short' });
-  const year = d.getFullYear();
-  const dateStr = `${day} ${month} ${year}`;
+  try {
+    const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TIMEZONE,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+    // e.g. "13 Nov 2026"
+    const dateStr = dateFormatter.format(d);
 
-  // Format: "11:42 AM"
-  const timeStr = d.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: APP_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    // e.g. "02:30 PM"
+    const timeStr = timeFormatter.format(d);
 
-  return {
-    dateStr,
-    timeStr,
-    fullStr: `${dateStr}, ${timeStr}`
-  };
+    return {
+      dateStr,
+      timeStr,
+      fullStr: `${dateStr}, ${timeStr}`
+    };
+  } catch (e) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = d.toLocaleString('en-US', { month: 'short' });
+    const year = d.getFullYear();
+    const dateStr = `${day} ${month} ${year}`;
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    return {
+      dateStr,
+      timeStr,
+      fullStr: `${dateStr}, ${timeStr}`
+    };
+  }
 }
 
 /**
@@ -293,9 +384,12 @@ export function sortTransactions(transactions) {
  */
 export function aggregateCategoriesForChart(expenses, currentYear, currentMonth) {
   const monthExpenses = (expenses || []).filter(e => {
-    const dt = e.transactionDateTime || e.expenseDate;
-    const d = new Date(dt);
-    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    const dt = e.expenseDate || e.transactionDateTime || e.createdAt;
+    if (!dt) return false;
+    const { dateStr } = getLocalDateAndTimeString(dt);
+    if (!dateStr) return false;
+    const [y, m] = dateStr.split('-').map(Number);
+    return y === currentYear && (m - 1) === currentMonth;
   });
 
   const monthlyExpenses = monthExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);

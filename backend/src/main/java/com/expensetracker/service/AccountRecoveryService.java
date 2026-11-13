@@ -29,6 +29,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
@@ -43,11 +45,14 @@ public class AccountRecoveryService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    private static final ZoneId IST_ZONE = ZoneId.of("Asia/Kolkata");
+
     private boolean isPostgres = false;
     private boolean hasAccountsTable = false;
     private boolean hasExpensesTable = false;
     private boolean hasIncomesTable = false;
     private boolean hasRemindersTable = false;
+    private boolean hasTombstonesTable = false;
 
     @PostConstruct
     public void init() {
@@ -61,8 +66,30 @@ public class AccountRecoveryService {
                     hasExpensesTable = checkTable(meta, "expenses");
                     hasIncomesTable = checkTable(meta, "incomes");
                     hasRemindersTable = checkTable(meta, "upcoming_payments");
-                    log.info("AccountRecoveryService initialized: isPostgres={}, hasAccounts={}, hasExpenses={}, hasIncomes={}",
-                            isPostgres, hasAccountsTable, hasExpensesTable, hasIncomesTable);
+                    hasTombstonesTable = checkTable(meta, "sync_tombstones");
+
+                    if (isPostgres && !hasTombstonesTable) {
+                        try {
+                            jdbcTemplate.execute(
+                                "CREATE TABLE IF NOT EXISTS sync_tombstones (" +
+                                "id VARCHAR(64) NOT NULL, " +
+                                "entity_type VARCHAR(32) NOT NULL, " +
+                                "user_id UUID NOT NULL, " +
+                                "deleted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, " +
+                                "PRIMARY KEY (id, user_id))"
+                            );
+                            jdbcTemplate.execute(
+                                "CREATE INDEX IF NOT EXISTS idx_sync_tombstones_user ON sync_tombstones(user_id, deleted_at DESC)"
+                            );
+                            hasTombstonesTable = true;
+                            log.info("Created sync_tombstones table and index in PostgreSQL.");
+                        } catch (Exception e) {
+                            log.warn("Could not create sync_tombstones table: {}", e.getMessage());
+                        }
+                    }
+
+                    log.info("AccountRecoveryService initialized: isPostgres={}, hasAccounts={}, hasExpenses={}, hasIncomes={}, hasTombstones={}",
+                            isPostgres, hasAccountsTable, hasExpensesTable, hasIncomesTable, hasTombstonesTable);
 
                     if (hasAccountsTable) {
                         reconcileAndConstrainAccounts();
@@ -84,6 +111,58 @@ public class AccountRecoveryService {
             }
         } catch (Exception ignored) {}
         return false;
+    }
+
+    private void recordTombstone(String entityId, String entityType, UUID userId) {
+        if (!isPostgres || !hasTombstonesTable || entityId == null || userId == null) return;
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO sync_tombstones (id, entity_type, user_id, deleted_at) " +
+                    "VALUES (?, ?, ?, ?) " +
+                    "ON CONFLICT (id, user_id) DO UPDATE SET deleted_at = EXCLUDED.deleted_at",
+                    entityId.trim().toLowerCase(), entityType.toUpperCase(), userId, Timestamp.from(Instant.now())
+            );
+            log.info("Recorded tombstone for {} ID: {} user: {}", entityType, entityId, userId);
+        } catch (Exception e) {
+            log.warn("Failed to record tombstone for entity {}: {}", entityId, e.getMessage());
+        }
+    }
+
+    private boolean isTombstoned(String entityId, UUID userId) {
+        if (!isPostgres || !hasTombstonesTable || entityId == null || userId == null) return false;
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM sync_tombstones WHERE id = ? AND user_id = ?",
+                    Integer.class, entityId.trim().toLowerCase(), userId
+            );
+            return count != null && count > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String formatIsoTimestamp(Object timestampObj) {
+        if (timestampObj == null) return null;
+        if (timestampObj instanceof Timestamp) {
+            return ((Timestamp) timestampObj).toInstant().toString();
+        }
+        if (timestampObj instanceof java.util.Date) {
+            return ((java.util.Date) timestampObj).toInstant().toString();
+        }
+        try {
+            String s = String.valueOf(timestampObj).trim();
+            if (s.isEmpty()) return null;
+            if (s.endsWith("Z") || s.matches(".*[+-]\\d{2}:?\\d{2}$")) {
+                return s;
+            }
+            s = s.replace(' ', 'T');
+            if (!s.endsWith("Z")) {
+                s += "Z";
+            }
+            return Instant.parse(s).toString();
+        } catch (Exception e) {
+            return String.valueOf(timestampObj);
+        }
     }
 
     /**
@@ -279,6 +358,7 @@ public class AccountRecoveryService {
                     }
                 } else if ("EXPENSE".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
+                        recordTombstone(entityId.toString(), "EXPENSE", userId);
                         if (hasExpensesTable && isPostgres) {
                             List<Map<String, Object>> existing = jdbcTemplate.queryForList(
                                     "SELECT amount, account_id FROM expenses WHERE id = ? AND user_id = ?",
@@ -297,6 +377,11 @@ public class AccountRecoveryService {
                             }
                         }
                     } else {
+                        if (isTombstoned(entityId.toString(), userId)) {
+                            log.info("processBatchSync skipping tombstoned expense ID {}", entityId);
+                            processedIds.add(op.getId());
+                            continue;
+                        }
                         BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
                         String category = getString(payload.get("category"), "Others");
                         String description = getString(payload.get("description"), "Expense");
@@ -377,6 +462,7 @@ public class AccountRecoveryService {
                     }
                 } else if ("INCOME".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
+                        recordTombstone(entityId.toString(), "INCOME", userId);
                         if (hasIncomesTable && isPostgres) {
                             List<Map<String, Object>> existing = jdbcTemplate.queryForList(
                                     "SELECT amount, account_id FROM incomes WHERE id = ? AND user_id = ?",
@@ -395,6 +481,11 @@ public class AccountRecoveryService {
                             }
                         }
                     } else {
+                        if (isTombstoned(entityId.toString(), userId)) {
+                            log.info("processBatchSync skipping tombstoned income ID {}", entityId);
+                            processedIds.add(op.getId());
+                            continue;
+                        }
                         BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
                         String description = getString(payload.get("description"), "Income");
                         Date incomeDate = parseSqlDate(payload.get("incomeDate"), payload.get("transactionDateTime"), payload.get("createdAt"));
@@ -485,10 +576,16 @@ public class AccountRecoveryService {
                     }
                 } else if ("REMINDER".equals(entityType)) {
                     if ("DELETE".equals(opType)) {
+                        recordTombstone(entityId.toString(), "REMINDER", userId);
                         if (hasRemindersTable && isPostgres) {
                             jdbcTemplate.update("DELETE FROM upcoming_payments WHERE id = ? AND user_id = ?", entityId, userId);
                         }
                     } else {
+                        if (isTombstoned(entityId.toString(), userId)) {
+                            log.info("processBatchSync skipping tombstoned reminder ID {}", entityId);
+                            processedIds.add(op.getId());
+                            continue;
+                        }
                         String title = getString(payload.get("title"), "Reminder");
                         BigDecimal amount = getBigDecimal(payload.get("amount"), BigDecimal.ZERO);
                         Date dueDate = parseSqlDate(payload.get("dueDate"), null, null);
@@ -773,6 +870,11 @@ public class AccountRecoveryService {
                 UUID expId = parseUUID(exp.get("id"));
                 if (expId == null) expId = UUID.randomUUID();
 
+                if (isTombstoned(expId.toString(), userId)) {
+                    log.info("syncRelationalTables skipping tombstoned expense ID {}", expId);
+                    continue;
+                }
+
                 BigDecimal amount = getBigDecimal(exp.get("amount"), BigDecimal.ZERO);
                 String category = getString(exp.get("category"), "Others");
                 String description = getString(exp.get("description"), "Expense");
@@ -817,6 +919,11 @@ public class AccountRecoveryService {
             try {
                 UUID incId = parseUUID(inc.get("id"));
                 if (incId == null) incId = UUID.randomUUID();
+
+                if (isTombstoned(incId.toString(), userId)) {
+                    log.info("syncRelationalTables skipping tombstoned income ID {}", incId);
+                    continue;
+                }
 
                 BigDecimal amount = getBigDecimal(inc.get("amount"), BigDecimal.ZERO);
                 String description = getString(inc.get("description"), "Income");
@@ -889,6 +996,30 @@ public class AccountRecoveryService {
                 }
             }
 
+            if (hasTombstonesTable) {
+                try {
+                    List<Map<String, Object>> tRows = jdbcTemplate.queryForList(
+                            "SELECT id, entity_type, deleted_at FROM sync_tombstones WHERE user_id = ? ORDER BY deleted_at DESC",
+                            userId
+                    );
+                    List<Map<String, Object>> tombList = new ArrayList<>();
+                    List<String> deletedIds = new ArrayList<>();
+                    for (Map<String, Object> tRow : tRows) {
+                        Map<String, Object> t = new HashMap<>();
+                        String tId = String.valueOf(tRow.get("id"));
+                        t.put("id", tId);
+                        t.put("entityType", tRow.get("entity_type"));
+                        t.put("deletedAt", formatIsoTimestamp(tRow.get("deleted_at")));
+                        tombList.add(t);
+                        deletedIds.add(tId.toLowerCase());
+                    }
+                    payload.put("tombstones", tombList);
+                    payload.put("deletedIds", deletedIds);
+                } catch (Exception e) {
+                    log.warn("Could not load tombstones for user {}: {}", userId, e.getMessage());
+                }
+            }
+
             if (hasExpensesTable) {
                 List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                         "SELECT e.id, e.amount, e.category, e.description, e.expense_date, e.notes, e.payment_mode, e.account_id, e.created_at, a.account_name " +
@@ -899,8 +1030,12 @@ public class AccountRecoveryService {
                 if (!rows.isEmpty()) {
                     List<Map<String, Object>> expList = new ArrayList<>();
                     for (Map<String, Object> row : rows) {
+                        String eId = String.valueOf(row.get("id"));
+                        if (isTombstoned(eId, userId)) {
+                            continue;
+                        }
                         Map<String, Object> e = new HashMap<>();
-                        e.put("id", String.valueOf(row.get("id")));
+                        e.put("id", eId);
                         e.put("amount", row.get("amount"));
                         e.put("category", row.get("category"));
                         e.put("description", row.get("description"));
@@ -909,7 +1044,8 @@ public class AccountRecoveryService {
                         e.put("paymentMode", row.get("payment_mode"));
                         e.put("accountId", row.get("account_id") != null ? String.valueOf(row.get("account_id")) : null);
                         e.put("accountName", row.get("account_name") != null ? String.valueOf(row.get("account_name")) : "Cash");
-                        e.put("createdAt", row.get("created_at") != null ? row.get("created_at").toString() : null);
+                        e.put("createdAt", formatIsoTimestamp(row.get("created_at")));
+                        e.put("transactionDateTime", formatIsoTimestamp(row.get("created_at")));
                         e.put("deleted", false);
                         expList.add(e);
                     }
@@ -927,15 +1063,20 @@ public class AccountRecoveryService {
                 if (!rows.isEmpty()) {
                     List<Map<String, Object>> incList = new ArrayList<>();
                     for (Map<String, Object> row : rows) {
+                        String iId = String.valueOf(row.get("id"));
+                        if (isTombstoned(iId, userId)) {
+                            continue;
+                        }
                         Map<String, Object> i = new HashMap<>();
-                        i.put("id", String.valueOf(row.get("id")));
+                        i.put("id", iId);
                         i.put("amount", row.get("amount"));
                         i.put("description", row.get("description"));
                         i.put("incomeDate", row.get("income_date") != null ? row.get("income_date").toString() : null);
                         i.put("notes", row.get("notes"));
                         i.put("accountId", row.get("account_id") != null ? String.valueOf(row.get("account_id")) : null);
                         i.put("accountName", row.get("account_name") != null ? String.valueOf(row.get("account_name")) : "Cash");
-                        i.put("createdAt", row.get("created_at") != null ? row.get("created_at").toString() : null);
+                        i.put("createdAt", formatIsoTimestamp(row.get("created_at")));
+                        i.put("transactionDateTime", formatIsoTimestamp(row.get("created_at")));
                         i.put("deleted", false);
                         incList.add(i);
                     }
@@ -985,8 +1126,17 @@ public class AccountRecoveryService {
     private Timestamp parseTimestamp(Object val) {
         if (val == null) return Timestamp.from(Instant.now());
         try {
+            if (val instanceof Timestamp) return (Timestamp) val;
+            if (val instanceof java.util.Date) return new Timestamp(((java.util.Date) val).getTime());
             String s = String.valueOf(val).trim();
             if (s.isEmpty()) return Timestamp.from(Instant.now());
+            if (s.endsWith("Z") || s.matches(".*[+-]\\d{2}:?\\d{2}$")) {
+                return Timestamp.from(Instant.parse(s));
+            }
+            s = s.replace(' ', 'T');
+            if (!s.endsWith("Z") && !s.matches(".*[+-]\\d{2}:?\\d{2}$")) {
+                s += "Z";
+            }
             return Timestamp.from(Instant.parse(s));
         } catch (Exception e) {
             return Timestamp.from(Instant.now());
@@ -995,16 +1145,17 @@ public class AccountRecoveryService {
 
     private Date parseSqlDate(Object dateVal, Object fallbackDtVal, Object fallbackCreatedVal) {
         Object val = dateVal != null ? dateVal : (fallbackDtVal != null ? fallbackDtVal : fallbackCreatedVal);
-        if (val == null) return Date.valueOf(LocalDate.now());
+        if (val == null) return Date.valueOf(LocalDate.now(IST_ZONE));
         try {
             String s = String.valueOf(val).trim();
-            if (s.length() >= 10 && s.charAt(4) == '-' && s.charAt(7) == '-') {
-                return Date.valueOf(s.substring(0, 10));
+            if (s.length() == 10 && s.charAt(4) == '-' && s.charAt(7) == '-') {
+                return Date.valueOf(s);
             }
-            Instant inst = Instant.parse(s);
-            return new Date(inst.toEpochMilli());
+            Timestamp ts = parseTimestamp(s);
+            LocalDate istDate = ts.toInstant().atZone(IST_ZONE).toLocalDate();
+            return Date.valueOf(istDate);
         } catch (Exception e) {
-            return Date.valueOf(LocalDate.now());
+            return Date.valueOf(LocalDate.now(IST_ZONE));
         }
     }
 }

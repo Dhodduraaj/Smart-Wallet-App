@@ -5,8 +5,12 @@ import {
   updateTransactionDateTime,
   sortTransactions,
   aggregateCategoriesForChart,
-  isDefaultCategory
+  isDefaultCategory,
+  getLocalDateString,
+  APP_TIMEZONE
 } from './transactionSorter.js';
+
+export { getLocalDateString };
 
 const STORAGE_KEY = 'smart_wallet_data';
 
@@ -17,14 +21,6 @@ export function generateUUID() {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-}
-
-// Helper to get local date string YYYY-MM-DD
-export function getLocalDateString(d = new Date()) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
 
 const isSelfTransfer = x => x && x.notes && (x.notes === 'Self Transfer' || x.notes.includes('Self Transfer'));
@@ -538,6 +534,11 @@ export async function saveLocalExpense(expenseData, isSynced = false) {
     expenses[index] = updatedData;
   }
 
+  // Remove from local tombstones if previously marked deleted
+  if (store.data.tombstones) {
+    store.data.tombstones = store.data.tombstones.filter(t => String(t.id).trim().toLowerCase() !== targetId);
+  }
+
   store.data.expenses = expenses;
   store.data.accounts = accounts;
   saveStoredData(store);
@@ -581,6 +582,17 @@ export async function deleteLocalExpense(id, isSynced = false) {
     const exp = expenses[index];
     expenses.splice(index, 1);
     store.data.expenses = expenses;
+
+    // Record local tombstone
+    store.data.tombstones = store.data.tombstones || [];
+    if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === targetId)) {
+      store.data.tombstones.push({
+        id: targetId,
+        entityType: 'EXPENSE',
+        deletedAt: new Date().toISOString()
+      });
+    }
+
     saveStoredData(store);
 
     if (!isSynced) {
@@ -736,6 +748,11 @@ export async function saveLocalIncome(incomeData, isSynced = false) {
     incomes[index] = updatedData;
   }
 
+  // Remove from local tombstones if previously marked deleted
+  if (store.data.tombstones) {
+    store.data.tombstones = store.data.tombstones.filter(t => String(t.id).trim().toLowerCase() !== targetId);
+  }
+
   store.data.incomes = incomes;
   store.data.accounts = accounts;
   saveStoredData(store);
@@ -779,6 +796,17 @@ export async function deleteLocalIncome(id, isSynced = false) {
     const inc = incomes[index];
     incomes.splice(index, 1);
     store.data.incomes = incomes;
+
+    // Record local tombstone
+    store.data.tombstones = store.data.tombstones || [];
+    if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === targetId)) {
+      store.data.tombstones.push({
+        id: targetId,
+        entityType: 'INCOME',
+        deletedAt: new Date().toISOString()
+      });
+    }
+
     saveStoredData(store);
 
     if (!isSynced) {
@@ -870,7 +898,19 @@ export async function saveLocalUpcomingPayment(reminder, isSynced = false) {
 
 export async function deleteLocalUpcomingPayment(id, isSynced = false) {
   const store = getStoredData();
-  store.data.reminders = (store.data.reminders || []).filter(r => r.id !== id);
+  const targetId = String(id).trim().toLowerCase();
+  store.data.reminders = (store.data.reminders || []).filter(r => String(r.id).trim().toLowerCase() !== targetId);
+
+  // Record local tombstone
+  store.data.tombstones = store.data.tombstones || [];
+  if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === targetId)) {
+    store.data.tombstones.push({
+      id: targetId,
+      entityType: 'REMINDER',
+      deletedAt: new Date().toISOString()
+    });
+  }
+
   saveStoredData(store);
 
   if (!isSynced) {
@@ -1436,6 +1476,54 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
   let deletedCount = 0;
   const wasPreviouslySynced = !!store.lastSync;
 
+  // Identify all tombstoned IDs from cloud payload and local store
+  const cloudDeletedIds = new Set(
+    (Array.isArray(cloudPayload.deletedIds) ? cloudPayload.deletedIds : [])
+      .concat(Array.isArray(cloudPayload.tombstones) ? cloudPayload.tombstones.map(t => t.id) : [])
+      .filter(Boolean)
+      .map(id => String(id).trim().toLowerCase())
+  );
+
+  const localTombstones = store.data.tombstones || [];
+  const localTombstoneIds = new Set(localTombstones.map(t => String(t.id).trim().toLowerCase()));
+
+  if (Array.isArray(cloudPayload.tombstones)) {
+    cloudPayload.tombstones.forEach(t => {
+      if (t && t.id) {
+        const tId = String(t.id).trim().toLowerCase();
+        if (!localTombstoneIds.has(tId)) {
+          localTombstones.push({
+            id: tId,
+            entityType: t.entityType || 'UNKNOWN',
+            deletedAt: t.deletedAt || new Date().toISOString()
+          });
+          localTombstoneIds.add(tId);
+        }
+      }
+    });
+    store.data.tombstones = localTombstones;
+  }
+
+  const allDeletedIds = new Set([...cloudDeletedIds, ...localTombstoneIds]);
+
+  // Clean pending sync queue of any tombstoned items
+  if (allDeletedIds.size > 0 && queue.length > 0) {
+    const cleanedQueue = queue.filter(q => {
+      const qEntityId = String(q.entityId).trim().toLowerCase();
+      if (allDeletedIds.has(qEntityId) && (q.operationType === 'CREATE' || q.operationType === 'UPDATE')) {
+        return false;
+      }
+      if (cloudDeletedIds.has(qEntityId) && q.operationType === 'DELETE') {
+        return false;
+      }
+      return true;
+    });
+    if (cleanedQueue.length !== queue.length) {
+      localStorage.setItem('smart_wallet_sync_queue', JSON.stringify(cleanedQueue));
+      queue = cleanedQueue;
+    }
+  }
+
   // 1. MERGE ACCOUNTS & COMPUTE ATOMIC LIVE BALANCES
   const rawCloudAccounts = Array.isArray(cloudPayload.accounts) ? cloudPayload.accounts : [];
   if (rawCloudAccounts.length > 0) {
@@ -1557,32 +1645,44 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
       }
     });
 
-    // Update or insert cloud expenses
-    for (const [cloudId, cloudExp] of cloudExpMap.entries()) {
+    // Update or insert cloud expenses, ignoring tombstoned items
+    for (const [cloudId, rawCloudExp] of cloudExpMap.entries()) {
+      if (allDeletedIds.has(cloudId)) {
+        continue;
+      }
+
+      const transactionDateTime = rawCloudExp.transactionDateTime || rawCloudExp.createdAt || createTransactionDateTime(rawCloudExp.expenseDate);
+      const expenseDate = rawCloudExp.expenseDate || (transactionDateTime ? getLocalDateString(transactionDateTime) : getLocalDateString());
+      const cloudExp = {
+        ...rawCloudExp,
+        expenseDate,
+        transactionDateTime,
+        createdAt: rawCloudExp.createdAt || transactionDateTime,
+        deleted: false
+      };
+
       const localIdx = localExpenses.findIndex(e => String(e.id).trim().toLowerCase() === cloudId);
       if (localIdx !== -1) {
         if (!pendingExpenseIds.has(cloudId)) {
           localExpenses[localIdx] = {
             ...localExpenses[localIdx],
-            ...cloudExp,
-            deleted: false
+            ...cloudExp
           };
           updatedCount++;
         }
       } else {
-        localExpenses.push({
-          ...cloudExp,
-          deleted: false
-        });
+        localExpenses.push(cloudExp);
         updatedCount++;
       }
     }
 
-    // Handle deletions: if local expense is not in cloud and not pending on this device, propagate deletion
+    // Handle deletions: if local expense is tombstoned or deleted in cloud, propagate deletion
     const retainedExpenses = [];
     for (const localExp of localExpenses) {
       const localId = String(localExp.id).trim().toLowerCase();
-      if (cloudExpMap.has(localId)) {
+      if (allDeletedIds.has(localId)) {
+        deletedCount++;
+      } else if (cloudExpMap.has(localId)) {
         retainedExpenses.push(localExp);
       } else if (pendingExpenseIds.has(localId)) {
         // Keep unsynced local transaction!
@@ -1613,22 +1713,32 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
       }
     });
 
-    for (const [cloudId, cloudInc] of cloudIncMap.entries()) {
+    for (const [cloudId, rawCloudInc] of cloudIncMap.entries()) {
+      if (allDeletedIds.has(cloudId)) {
+        continue;
+      }
+
+      const transactionDateTime = rawCloudInc.transactionDateTime || rawCloudInc.createdAt || createTransactionDateTime(rawCloudInc.incomeDate);
+      const incomeDate = rawCloudInc.incomeDate || (transactionDateTime ? getLocalDateString(transactionDateTime) : getLocalDateString());
+      const cloudInc = {
+        ...rawCloudInc,
+        incomeDate,
+        transactionDateTime,
+        createdAt: rawCloudInc.createdAt || transactionDateTime,
+        deleted: false
+      };
+
       const localIdx = localIncomes.findIndex(i => String(i.id).trim().toLowerCase() === cloudId);
       if (localIdx !== -1) {
         if (!pendingIncomeIds.has(cloudId)) {
           localIncomes[localIdx] = {
             ...localIncomes[localIdx],
-            ...cloudInc,
-            deleted: false
+            ...cloudInc
           };
           updatedCount++;
         }
       } else {
-        localIncomes.push({
-          ...cloudInc,
-          deleted: false
-        });
+        localIncomes.push(cloudInc);
         updatedCount++;
       }
     }
@@ -1636,7 +1746,9 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
     const retainedIncomes = [];
     for (const localInc of localIncomes) {
       const localId = String(localInc.id).trim().toLowerCase();
-      if (cloudIncMap.has(localId)) {
+      if (allDeletedIds.has(localId)) {
+        deletedCount++;
+      } else if (cloudIncMap.has(localId)) {
         retainedIncomes.push(localInc);
       } else if (pendingIncomeIds.has(localId)) {
         retainedIncomes.push(localInc);
@@ -1654,7 +1766,9 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
     const localReminders = store.data.reminders || [];
     const cloudRemMap = new Map();
     cloudPayload.reminders.forEach(r => {
-      if (r && r.id) cloudRemMap.set(String(r.id).trim().toLowerCase(), r);
+      if (r && r.id && !allDeletedIds.has(String(r.id).trim().toLowerCase())) {
+        cloudRemMap.set(String(r.id).trim().toLowerCase(), r);
+      }
     });
 
     for (const [cloudId, cloudRem] of cloudRemMap.entries()) {
@@ -1667,7 +1781,7 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
         localReminders.push(cloudRem);
       }
     }
-    store.data.reminders = localReminders;
+    store.data.reminders = localReminders.filter(r => !allDeletedIds.has(String(r.id).trim().toLowerCase()));
   }
 
   // 5. MERGE TRANSFERS

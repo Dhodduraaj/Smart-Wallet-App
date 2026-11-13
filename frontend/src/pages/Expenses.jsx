@@ -4,7 +4,8 @@ import api from '../lib/api';
 import {
   formatTransactionDateTime,
   getLocalDateAndTimeString,
-  combineDateAndTime
+  combineDateAndTime,
+  getLocalDateString
 } from '../lib/transactionSorter';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
@@ -23,13 +24,6 @@ const categoryColors = { Food: '#ef4444', Grocery: '#22c55e', Transport: '#3b82f
 
 const getCategoryColor = (category) => {
   return categoryColors[category] || '#6b7280';
-};
-
-const getLocalDateString = (d = new Date()) => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 };
 
 const emptyForm = {
