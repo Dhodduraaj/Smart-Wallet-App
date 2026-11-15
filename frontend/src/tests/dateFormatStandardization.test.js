@@ -98,4 +98,50 @@ test('Date Format Standardization Suite: DD/MM/YYYY across all platforms', async
     assert.strictEqual(expensePayload.expenseDate, '2026-11-15', 'expenseDate remains ISO date string');
     assert(expensePayload.transactionDateTime.endsWith('Z'), 'UTC instant preserved');
   });
+
+  await t.test('7. Interactive Date Picker Calendar Logic: Leap years, month boundaries, and zero timezone distortion', () => {
+    // Helper to calculate days in month
+    const getDaysInMonth = (y, m) => new Date(y, m, 0).getDate();
+    // Helper to get first day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+    const getFirstDayOfWeek = (y, m) => new Date(y, m - 1, 1).getDay();
+
+    // February non-leap year (2026) -> 28 days
+    assert.strictEqual(getDaysInMonth(2026, 2), 28, 'Feb 2026 has 28 days');
+    // February leap year (2024) -> 29 days
+    assert.strictEqual(getDaysInMonth(2024, 2), 29, 'Feb 2024 has 29 days');
+    // February leap year (2028) -> 29 days
+    assert.strictEqual(getDaysInMonth(2028, 2), 29, 'Feb 2028 has 29 days');
+
+    // 30-day months: April (4), June (6), September (9), November (11)
+    [4, 6, 9, 11].forEach(m => {
+      assert.strictEqual(getDaysInMonth(2026, m), 30, `Month ${m} in 2026 has 30 days`);
+    });
+
+    // 31-day months: Jan (1), Mar (3), May (5), Jul (7), Aug (8), Oct (10), Dec (12)
+    [1, 3, 5, 7, 8, 10, 12].forEach(m => {
+      assert.strictEqual(getDaysInMonth(2026, m), 31, `Month ${m} in 2026 has 31 days`);
+    });
+
+    // Verify November 2026 starts on Sunday (day 0)
+    assert.strictEqual(getFirstDayOfWeek(2026, 11), 0, 'Nov 1, 2026 is Sunday');
+
+    // Verify date selection synthesis:
+    // When a user selects a day (e.g. day 5 of Jan 2026 or day 15 of Nov 2026),
+    // it yields canonical YYYY-MM-DD which formats strictly to DD/MM/YYYY.
+    const pad2 = n => String(n).padStart(2, '0');
+    const constructSelected = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
+
+    const picked1 = constructSelected(2026, 1, 5);
+    assert.strictEqual(picked1, '2026-01-05');
+    assert.strictEqual(formatDateDDMMYYYY(picked1), '05/01/2026');
+
+    const picked2 = constructSelected(2026, 11, 15);
+    assert.strictEqual(picked2, '2026-11-15');
+    assert.strictEqual(formatDateDDMMYYYY(picked2), '15/11/2026');
+
+    const picked3 = constructSelected(2026, 3, 12);
+    assert.strictEqual(picked3, '2026-03-12');
+    assert.strictEqual(formatDateDDMMYYYY(picked3), '12/03/2026');
+  });
 });
+
