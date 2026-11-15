@@ -8,3 +8,4 @@ CREATE TABLE IF NOT EXISTS sync_tombstones (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_tombstones_user ON sync_tombstones(user_id, deleted_at DESC);
+

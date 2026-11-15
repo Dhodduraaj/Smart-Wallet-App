@@ -75,7 +75,7 @@ export function getStoredData() {
     const incomes = store.data.incomes || [];
     const transfers = store.data.transfers || [];
 
-    const cashCandidates = store.data.accounts.filter(a => 
+    const cashCandidates = store.data.accounts.filter(a =>
       a && !a.deleted && (a.accountType === 'SYSTEM' || (a.accountName && a.accountName.trim().toLowerCase() === 'cash'))
     );
 
@@ -110,7 +110,7 @@ export function getStoredData() {
       // For all other duplicates, reassociate any orphaned transactions to canonical
       scored.slice(1).forEach(({ account: dup }) => {
         const dupId = String(dup.id).trim().toLowerCase();
-        
+
         let dupExpensesSum = 0;
         let dupIncomesSum = 0;
 
@@ -363,7 +363,7 @@ export async function deleteLocalAccount(id, isSynced = false) {
   const accounts = store.data.accounts || [];
   const targetId = String(id).trim().toLowerCase();
   const acc = accounts.find(a => String(a.id).trim().toLowerCase() === targetId);
-  
+
   // Enforcement: default cash account cannot be deleted
   if (acc && (acc.accountType === 'SYSTEM' || acc.locked === true || (acc.accountName && acc.accountName.toLowerCase() === 'cash'))) {
     throw new Error('Default Cash account cannot be deleted');
@@ -406,8 +406,8 @@ export async function getLocalExpenses(params = {}) {
 
   if (search) {
     const q = search.trim().toLowerCase();
-    records = records.filter(r => 
-      (r.description || '').toLowerCase().includes(q) || 
+    records = records.filter(r =>
+      (r.description || '').toLowerCase().includes(q) ||
       (r.notes || '').toLowerCase().includes(q)
     );
   }
@@ -627,8 +627,8 @@ export async function getLocalIncomes(params = {}) {
 
   if (search) {
     const q = search.trim().toLowerCase();
-    records = records.filter(r => 
-      (r.description || '').toLowerCase().includes(q) || 
+    records = records.filter(r =>
+      (r.description || '').toLowerCase().includes(q) ||
       (r.notes || '').toLowerCase().includes(q)
     );
   }
@@ -1014,7 +1014,7 @@ export async function getLocalDashboardSummary() {
   const totalBalance = accounts.reduce((sum, a) => sum + parseFloat(a.currentBalance || 0), 0);
 
   const todayStr = getLocalDateString();
-  
+
   // Derive current month/year from the latest transaction date
   const allDates = [
     ...expenses.map(e => e.expenseDate),
@@ -1177,13 +1177,13 @@ export async function clearLocalDb() {
 export async function restoreDbFromBackup(backupObj) {
   if (!backupObj) return;
   const store = getStoredData();
-  
+
   // Safely restore backend schema
   let restoredData = backupObj.payload || backupObj;
   if (restoredData.data) {
     restoredData = restoredData.data;
   }
-  
+
   const merged = {
     ...store,
     localUserId: backupObj.localUserId || backupObj.userId || store.localUserId,
@@ -1195,14 +1195,14 @@ export async function restoreDbFromBackup(backupObj) {
       ...restoredData
     }
   };
-  
+
   if (restoredData.people) {
     merged.data.people = restoredData.people;
   }
   if (restoredData.peopleLedger) {
     merged.data.peopleLedger = restoredData.peopleLedger;
   }
-  
+
   saveStoredData(merged);
 }
 
@@ -1226,7 +1226,7 @@ export async function getLocalPeople(search = '') {
     const totalIncoming = entries.reduce((sum, e) => sum + parseFloat(e.incomingMoney || 0), 0);
     const totalOutgoing = entries.reduce((sum, e) => sum + parseFloat(e.outgoingMoney || 0), 0);
     const balance = totalIncoming - totalOutgoing; // Incoming increases balance, Outgoing decreases balance
-    
+
     // Sort entries to find latest activity
     const sorted = sortTransactions(entries.map(e => ({ ...e, transactionDateTime: e.date || e.createdAt })));
     const lastEntryDate = sorted.length > 0 ? (sorted[0].date || sorted[0].createdAt) : p.createdAt;
@@ -1852,8 +1852,8 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
   saveStoredData(store);
 
   try {
-    Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) }).catch(() => {});
-  } catch {}
+    Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) }).catch(() => { });
+  } catch { }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('financial-data-changed'));

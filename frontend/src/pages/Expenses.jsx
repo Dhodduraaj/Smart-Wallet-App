@@ -112,8 +112,8 @@ const Expenses = () => {
     loadData();
 
     const handleSync = () => {
-      fetchAccounts().catch(() => {});
-      fetchExpenses().catch(() => {});
+      fetchAccounts().catch(() => { });
+      fetchExpenses().catch(() => { });
     };
     window.addEventListener('sync-completed', handleSync);
     window.addEventListener('financial-data-changed', handleSync);
@@ -132,7 +132,7 @@ const Expenses = () => {
         const res = await api.get('/api/accounts');
         currentAccounts = res.data || [];
         setAccounts(currentAccounts);
-      } catch {}
+      } catch { }
     }
     setEditId(null);
     const now = new Date();
@@ -153,7 +153,7 @@ const Expenses = () => {
   };
 
   const openEdit = (exp) => {
-    fetchAccounts().catch(() => {});
+    fetchAccounts().catch(() => { });
     setEditId(exp.id);
     const category = exp.category;
     const initialDt = exp.transactionDateTime || exp.createdAt || exp.expenseDate;
@@ -185,7 +185,7 @@ const Expenses = () => {
     try {
       const categoryToSave = form.category === 'Others' ? customCategory.trim() : form.category;
       const existingExpense = editId ? expenses.find(e => e.id === editId) : null;
-      
+
       const transactionDateTime = combineDateAndTime(
         form.expenseDate,
         form.expenseTime,
