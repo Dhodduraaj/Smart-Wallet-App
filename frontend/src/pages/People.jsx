@@ -4,6 +4,7 @@ import {
   formatTransactionDateTime,
   createTransactionDateTime
 } from '../lib/transactionSorter';
+import CustomDateInput from '../components/CustomDateInput';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Table, TableBody, TableCell, TableContainer,
@@ -946,14 +947,12 @@ const People = () => {
                               Edit Ledger Entry
                             </Typography>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                              <TextField
+                              <CustomDateInput
                                 label="Date"
-                                type="date"
                                 size="small"
                                 value={editRowForm.selectedDate}
                                 onChange={(e) => setEditRowForm({ ...editRowForm, selectedDate: e.target.value })}
                                 fullWidth
-                                InputLabelProps={{ shrink: true }}
                               />
                               <TextField
                                 label="Details"
@@ -1188,13 +1187,11 @@ const People = () => {
                                 <TableCell padding="checkbox" sx={{ pl: 2 }} />
                                 {/* 1. Date Input */}
                                 <TableCell>
-                                  <TextField
-                                    type="date"
+                                  <CustomDateInput
                                     size="small"
                                     value={editRowForm.selectedDate}
                                     onChange={(e) => setEditRowForm({ ...editRowForm, selectedDate: e.target.value })}
                                     fullWidth
-                                    InputLabelProps={{ shrink: true }}
                                   />
                                 </TableCell>
 
@@ -1378,13 +1375,11 @@ const People = () => {
               fullWidth
               autoFocus
             />
-            <TextField
+            <CustomDateInput
               label="Date"
-              type="date"
               value={entryForm.selectedDate}
               onChange={(e) => setEntryForm({ ...entryForm, selectedDate: e.target.value })}
               fullWidth
-              InputLabelProps={{ shrink: true }}
             />
             <Grid container spacing={2}>
               <Grid item xs={6}>

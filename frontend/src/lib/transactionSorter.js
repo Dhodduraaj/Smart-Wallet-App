@@ -272,12 +272,83 @@ export function updateTransactionDateTime(existingDateTime, newSelectedDate, new
 }
 
 /**
- * Formats a timestamp into human-readable Date and Time strings using the
- * device's local timezone.
+ * Formats any date value (Date object, ISO string, timestamp, or YYYY-MM-DD string)
+ * into strictly standard DD/MM/YYYY format in Indian Standard Time (Asia/Kolkata).
+ *
+ * Examples:
+ *   "2026-01-05" -> "05/01/2026"
+ *   "2026-03-12" -> "12/03/2026"
+ *   "2026-11-15" -> "15/11/2026"
+ *   "2026-12-01" -> "01/12/2026"
+ *
+ * @param {string|Date|number} val
+ * @returns {string} Standard DD/MM/YYYY formatted string
+ */
+export function formatDateDDMMYYYY(val) {
+  if (val === null || val === undefined || val === '') return '—';
+
+  // Fast path for YYYY-MM-DD string
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val.trim())) {
+    const [y, m, d] = val.trim().split('-');
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+  }
+
+  const d = parseDateTime(val);
+  if (!d || isNaN(d.getTime())) return String(val);
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TIMEZONE,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+    const parts = formatter.formatToParts(d);
+    let day = '', month = '', year = '';
+    parts.forEach(p => {
+      if (p.type === 'day') day = p.value.padStart(2, '0');
+      else if (p.type === 'month') month = p.value.padStart(2, '0');
+      else if (p.type === 'year') year = p.value;
+    });
+    if (day && month && year) {
+      return `${day}/${month}/${year}`;
+    }
+    return formatter.format(d);
+  } catch (e) {
+    const datePart = getLocalDateString(d);
+    const [y, m, day] = datePart.split('-');
+    return `${day.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+  }
+}
+
+/**
+ * Converts a DD/MM/YYYY or DD-MM-YYYY string to standard YYYY-MM-DD.
+ * If already YYYY-MM-DD, returns it trimmed.
+ *
+ * @param {string} dateStr
+ * @returns {string} YYYY-MM-DD or original trimmed string
+ */
+export function parseDDMMYYYYtoYYYYMMDD(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  const trimmed = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(trimmed);
+  if (match) {
+    const d = match[1].padStart(2, '0');
+    const m = match[2].padStart(2, '0');
+    const y = match[3];
+    return `${y}-${m}-${d}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Formats a timestamp into human-readable Date (DD/MM/YYYY) and Time strings using the
+ * device's local timezone (Asia/Kolkata).
  *
  * Display to the user:
- *   Date: 05 Sep 2026
- *   Time: 11:42 AM
+ *   Date: 15/11/2026
+ *   Time: 02:30 PM
  *
  * @param {string|Date|number} dateTimeValue
  * @returns {{ dateStr: string, timeStr: string, fullStr: string }}
@@ -293,14 +364,7 @@ export function formatTransactionDateTime(dateTimeValue) {
   }
 
   try {
-    const dateFormatter = new Intl.DateTimeFormat('en-GB', {
-      timeZone: APP_TIMEZONE,
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
-    // e.g. "13 Nov 2026"
-    const dateStr = dateFormatter.format(d);
+    const dateStr = formatDateDDMMYYYY(d);
 
     const timeFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: APP_TIMEZONE,
@@ -317,10 +381,7 @@ export function formatTransactionDateTime(dateTimeValue) {
       fullStr: `${dateStr}, ${timeStr}`
     };
   } catch (e) {
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = d.toLocaleString('en-US', { month: 'short' });
-    const year = d.getFullYear();
-    const dateStr = `${day} ${month} ${year}`;
+    const dateStr = formatDateDDMMYYYY(d);
     const timeStr = d.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',

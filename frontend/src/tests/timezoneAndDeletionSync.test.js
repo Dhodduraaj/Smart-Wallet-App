@@ -67,7 +67,7 @@ console.log('\nScenario A: Expense created on website at 02:30 PM IST...');
 
   // 2. Format on mobile device
   const mobileDisplay = formatTransactionDateTime(instant);
-  assert.strictEqual(mobileDisplay.dateStr, '13 Nov 2026', 'Date must be 13 Nov 2026 on mobile');
+  assert.strictEqual(mobileDisplay.dateStr, '13/11/2026', 'Date must be 13/11/2026 on mobile');
   assert.strictEqual(mobileDisplay.timeStr, '02:30 PM', 'Time must be exactly 02:30 PM (not shifted by 5:30)');
 
   // 3. Date-only field
@@ -91,7 +91,7 @@ console.log('\nScenario B: Expense created on mobile at 08:00 AM IST...');
 
   // Website parses and formats
   const webDisplay = formatTransactionDateTime(instant);
-  assert.strictEqual(webDisplay.dateStr, '13 Nov 2026');
+  assert.strictEqual(webDisplay.dateStr, '13/11/2026');
   assert.strictEqual(webDisplay.timeStr, '08:00 AM', 'Website must display 08:00 AM IST');
 
   // Simulate SQL timestamp format round-trip from backend "2026-11-13 02:30:00"
@@ -116,13 +116,13 @@ console.log('\nScenario C: Midnight boundary transaction at 01:00 AM IST on Nov 
 
   // Must display as Nov 13 on both platforms
   const display = formatTransactionDateTime(instant);
-  assert.strictEqual(display.dateStr, '13 Nov 2026', 'Must display Nov 13, NOT Nov 12');
+  assert.strictEqual(display.dateStr, '13/11/2026', 'Must display 13/11/2026, NOT 12/11/2026');
   assert.strictEqual(display.timeStr, '01:00 AM', 'Must display 01:00 AM');
 
   // Edit other fields (e.g. amount or notes) without touching date
   const updatedInstant = updateTransactionDateTime(instant, '2026-11-13', null);
   const updatedDisplay = formatTransactionDateTime(updatedInstant);
-  assert.strictEqual(updatedDisplay.dateStr, '13 Nov 2026', 'Date must not shift upon edit');
+  assert.strictEqual(updatedDisplay.dateStr, '13/11/2026', 'Date must not shift upon edit');
   assert.strictEqual(updatedDisplay.timeStr, '01:00 AM', 'Time must remain 01:00 AM upon edit');
 
   console.log('  ✔ Scenario C Passed: Midnight boundary transactions strictly remain on Nov 13 IST');
@@ -384,7 +384,7 @@ localStorage.clear();
   assert.strictEqual(finalStore.data.expenses[0].id, 'exp-200');
 
   const dtDisplay = formatTransactionDateTime(finalStore.data.expenses[0].transactionDateTime);
-  assert.strictEqual(dtDisplay.dateStr, '13 Nov 2026');
+  assert.strictEqual(dtDisplay.dateStr, '13/11/2026');
   assert.strictEqual(dtDisplay.timeStr, '12:00 PM');
 
   console.log('  ✔ Scenario G Passed: Final balance ₹9,800 and single transaction ₹200 match across devices');

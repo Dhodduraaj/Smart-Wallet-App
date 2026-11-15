@@ -6,6 +6,7 @@ import {
   updateTransactionDateTime,
   getLocalDateString
 } from '../lib/transactionSorter';
+import CustomDateInput from '../components/CustomDateInput';
 import {
   Box, Typography, Card, CardContent, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, MenuItem, Table, TableBody, TableCell, TableContainer,
@@ -314,7 +315,7 @@ const Income = () => {
           <TextField label="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required fullWidth />
           <Grid container spacing={2}>
             <Grid item xs={6}><TextField label="Amount (₹)" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required fullWidth /></Grid>
-            <Grid item xs={6}><TextField label="Date" type="date" value={form.incomeDate} onChange={(e) => setForm({ ...form, incomeDate: e.target.value })} required fullWidth InputLabelProps={{ shrink: true }} /></Grid>
+            <Grid item xs={6}><CustomDateInput label="Date" value={form.incomeDate} onChange={(e) => setForm({ ...form, incomeDate: e.target.value })} required fullWidth /></Grid>
           </Grid>
           <TextField label="Notes (optional)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} multiline rows={2} fullWidth />
         </DialogContent>

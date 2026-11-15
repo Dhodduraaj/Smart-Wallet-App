@@ -15,6 +15,8 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-hot-toast';
 import { getDeviceTimeZone } from '../lib/deviceTimezone';
+import { formatDateDDMMYYYY } from '../lib/transactionSorter';
+import CustomDateInput from '../components/CustomDateInput';
 
 const getLocalDateString = (d = new Date()) => {
   const year = d.getFullYear();
@@ -289,8 +291,8 @@ const Reminders = () => {
 
                     <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: isMobile ? 1.5 : 0, pl: isMobile ? 4.5 : 0, width: isMobile ? '100%' : 'auto', justifyContent: 'flex-start' }}>
                       <Chip label={`₹${parseFloat(p.amount || 0).toFixed(2)}`} size="small" color="error" variant="outlined" sx={{ fontWeight: 700 }} />
-                      <Chip label={`Due: ${p.dueDate}`} size="small" variant="outlined" />
-                      <Chip label={`Remind: ${p.reminderDate}`} size="small" variant="outlined" />
+                      <Chip label={`Due: ${formatDateDDMMYYYY(p.dueDate)}`} size="small" variant="outlined" />
+                      <Chip label={`Remind: ${formatDateDDMMYYYY(p.reminderDate)}`} size="small" variant="outlined" />
                     </Box>
 
                     {!isMobile && (
@@ -334,7 +336,7 @@ const Reminders = () => {
                       </IconButton>
                       <Box sx={{ flexGrow: 1 }}>
                         <Typography sx={{ fontWeight: 600, textDecoration: 'line-through', fontSize: { xs: '0.95rem', sm: '1rem' } }}>{p.title}</Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>₹{parseFloat(p.amount || 0).toFixed(2)} • Due: {p.dueDate}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>₹{parseFloat(p.amount || 0).toFixed(2)} • Due: {formatDateDDMMYYYY(p.dueDate)}</Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
                         <IconButton size="small" color="error" onClick={() => handleDelete(p.id)}><DeleteOutlineOutlined fontSize="small" /></IconButton>
@@ -366,8 +368,8 @@ const Reminders = () => {
           <TextField label="Description (optional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} fullWidth />
           <TextField label="Amount (₹)" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required fullWidth />
           <Grid container spacing={2}>
-            <Grid item xs={6}><TextField label="Due Date" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} required fullWidth InputLabelProps={{ shrink: true }} /></Grid>
-            <Grid item xs={6}><TextField label="Reminder Date" type="date" value={form.reminderDate} onChange={(e) => setForm({ ...form, reminderDate: e.target.value })} required fullWidth InputLabelProps={{ shrink: true }} /></Grid>
+            <Grid item xs={6}><CustomDateInput label="Due Date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} required fullWidth /></Grid>
+            <Grid item xs={6}><CustomDateInput label="Reminder Date" value={form.reminderDate} onChange={(e) => setForm({ ...form, reminderDate: e.target.value })} required fullWidth /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

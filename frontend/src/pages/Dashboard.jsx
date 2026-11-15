@@ -6,6 +6,7 @@ import {
   getLocalDateAndTimeString,
   combineDateAndTime
 } from '../lib/transactionSorter';
+import CustomDateInput from '../components/CustomDateInput';
 import {
   Grid,
   Card,
@@ -705,14 +706,12 @@ const Dashboard = () => {
               />
             </Grid>
             <Grid item xs={6}>
-              <TextField
+              <CustomDateInput
                 label="Date"
-                type="date"
                 value={incomeForm.incomeDate}
                 onChange={(e) => setIncomeForm({ ...incomeForm, incomeDate: e.target.value })}
                 required
                 fullWidth
-                InputLabelProps={{ shrink: true }}
               />
             </Grid>
           </Grid>
@@ -768,14 +767,12 @@ const Dashboard = () => {
           />
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
-              <TextField
+              <CustomDateInput
                 label="Date"
-                type="date"
                 value={expenseForm.expenseDate}
                 onChange={(e) => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })}
                 required
                 fullWidth
-                InputLabelProps={{ shrink: true }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>

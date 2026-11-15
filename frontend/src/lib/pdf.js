@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { formatTransactionDateTime } from './transactionSorter.js';
+import { formatTransactionDateTime, formatDateDDMMYYYY } from './transactionSorter.js';
 
 export function generatePdfReportLocal(reportDto, omitCategory = false) {
   const doc = new jsPDF({
@@ -31,7 +31,9 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
-  doc.text(`Period: ${reportDto.startDate} to ${reportDto.endDate}`, doc.internal.pageSize.width / 2, currentY, { align: 'center' });
+  const formattedStart = formatDateDDMMYYYY(reportDto.startDate);
+  const formattedEnd = formatDateDDMMYYYY(reportDto.endDate);
+  doc.text(`Period: ${formattedStart} to ${formattedEnd}`, doc.internal.pageSize.width / 2, currentY, { align: 'center' });
   currentY += 15;
 
   // Username

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import api from '../lib/api';
 import { generatePdfReportLocal } from '../lib/pdf';
 import { sortTransactions, formatTransactionDateTime } from '../lib/transactionSorter';
+import CustomDateInput from '../components/CustomDateInput';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import {
@@ -177,10 +178,10 @@ const Reports = () => {
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: '1.1rem' }}>Report Options</Typography>
           <Grid container spacing={2.5} alignItems="center">
             <Grid item xs={12} sm={3}>
-              <TextField label="Start Date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth size="small" InputLabelProps={{ shrink: true }} />
+              <CustomDateInput label="Start Date" value={startDate} onChange={(e) => setStartDate(e.target.value)} fullWidth size="small" />
             </Grid>
             <Grid item xs={12} sm={3}>
-              <TextField label="End Date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth size="small" InputLabelProps={{ shrink: true }} />
+              <CustomDateInput label="End Date" value={endDate} onChange={(e) => setEndDate(e.target.value)} fullWidth size="small" />
             </Grid>
 
             {/* Live Filter Dropdown 1 */}
