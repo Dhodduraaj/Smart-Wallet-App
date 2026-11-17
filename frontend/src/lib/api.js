@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { Preferences } from '@capacitor/preferences';
-import * as localDb from './db';
-import { generatePdfReportLocal } from './pdf';
-import { sync } from './sync';
+import * as localDb from './db.js';
+import { generatePdfReportLocal } from './pdf.js';
+import { sync } from './sync.js';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8081',
+  baseURL: (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:8081',
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -59,6 +59,7 @@ const customOfflineAdapter = async (config) => {
   const isOnlineOnlyAction = 
     cleanUrl.includes('/api/auth/login') ||
     cleanUrl.includes('/api/auth/register') ||
+    cleanUrl.includes('/api/auth/refresh') ||
     cleanUrl.includes('/api/auth/recover-and-sync') ||
     cleanUrl.includes('/api/auth/recover-account') ||
     cleanUrl.includes('/api/user/change-password');
@@ -425,6 +426,88 @@ const customOfflineAdapter = async (config) => {
   return axios(netConfig);
 };
 
+export const storeAuthTokens = ({ token, refreshToken, expiresIn }) => {
+  if (token) {
+    localStorage.setItem('token', token);
+    Preferences.set({ key: 'token', value: token }).catch(() => {});
+  }
+  if (refreshToken) {
+    localStorage.setItem('refreshToken', refreshToken);
+    Preferences.set({ key: 'refreshToken', value: refreshToken }).catch(() => {});
+  }
+  if (expiresIn) {
+    const sessionExpiry = String(Date.now() + Number(expiresIn));
+    localStorage.setItem('sessionExpiry', sessionExpiry);
+    Preferences.set({ key: 'sessionExpiry', value: sessionExpiry }).catch(() => {});
+  }
+};
+
+export const clearAuthTokens = async () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('sessionExpiry');
+  localStorage.removeItem('user');
+  try {
+    await Preferences.remove({ key: 'token' });
+  } catch {}
+  try {
+    await Preferences.remove({ key: 'refreshToken' });
+  } catch {}
+  try {
+    await Preferences.remove({ key: 'sessionExpiry' });
+  } catch {}
+};
+
+let refreshPromise = null;
+
+export const refreshAccessToken = async () => {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) {
+        throw new Error('No refresh token available');
+      }
+
+      const baseURL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:8081';
+
+      const response = await axios.post(`${baseURL}/api/auth/refresh`, {
+        refreshToken: refreshToken
+      }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 15000
+      });
+
+      const { token: newAccessToken, refreshToken: newRefreshToken, expiresIn } = response.data || {};
+      if (!newAccessToken) {
+        throw new Error('Refresh failed: No access token received');
+      }
+
+      storeAuthTokens({
+        token: newAccessToken,
+        refreshToken: newRefreshToken || refreshToken,
+        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+      });
+
+      return newAccessToken;
+    } catch (err) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        console.warn('[refreshAccessToken] Refresh token rejected or expired (401/403). Terminating 30-day session.');
+        await logOutUser(true);
+      }
+      // Cold-start, network errors, timeouts, 5xx do NOT log out user!
+      throw err;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+};
+
 // Request interceptor to add the JWT token and custom adapter
 api.interceptors.request.use(
   (config) => {
@@ -438,33 +521,50 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle 401 Unauthorized errors globally
+// Response interceptor to handle 401 Unauthorized errors and perform silent token refresh
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    const url = error.config?.url || '';
+  async (error) => {
+    const originalConfig = error.config;
+    const url = originalConfig?.url || '';
     const isAuthEndpoint = url.includes('/api/auth/login') || 
                            url.includes('/api/auth/register') || 
+                           url.includes('/api/auth/refresh') ||
                            url.includes('/api/auth/recover-and-sync') ||
                            url.includes('/api/auth/recover-account');
-    if (error.response?.status === 401 && !isAuthEndpoint) {
-      logOutUser(true);
+
+    if (error.response?.status === 401 && !isAuthEndpoint && originalConfig && !originalConfig._retry) {
+      originalConfig._retry = true;
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) {
+        await logOutUser(true);
+        return Promise.reject(error);
+      }
+
+      try {
+        const newToken = await refreshAccessToken();
+        originalConfig.headers = originalConfig.headers || {};
+        originalConfig.headers['Authorization'] = `Bearer ${newToken}`;
+        return api(originalConfig);
+      } catch (refreshErr) {
+        return Promise.reject(refreshErr);
+      }
     }
+
     return Promise.reject(error);
   }
 );
 
-async function logOutUser(sessionExpired = false) {
+export async function logOutUser(sessionExpired = false) {
   if (isLoggingOut) return;
   isLoggingOut = true;
   setTimeout(() => {
     isLoggingOut = false;
   }, 2000);
 
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  await clearAuthTokens();
+
   try {
-    await Preferences.remove({ key: 'token' });
     const raw = localStorage.getItem('smart_wallet_data');
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -476,14 +576,19 @@ async function logOutUser(sessionExpired = false) {
     console.warn('[logOutUser] Failed to clear Preferences:', err);
   }
 
-  if (sessionExpired) {
-    sessionStorage.setItem('authMessage', 'Session expired. Please login again.');
+  if (sessionExpired && typeof sessionStorage !== 'undefined') {
+    try {
+      sessionStorage.setItem('authMessage', 'Session expired. Please login again.');
+    } catch {}
   }
 
-  window.dispatchEvent(new Event('auth-logout'));
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event('auth-logout'));
 
-  if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-    window.location.href = '/login';
+    if (window.location && typeof window.location.pathname === 'string' &&
+        window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+      window.location.href = '/login';
+    }
   }
 }
 

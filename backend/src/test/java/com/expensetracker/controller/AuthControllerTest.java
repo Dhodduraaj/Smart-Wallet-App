@@ -272,5 +272,75 @@ public class AuthControllerTest {
                         .content(objectMapper.writeValueAsString(recoveryRequest)))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    @DisplayName("Scenario 12: Token Refresh - Valid refresh token produces fresh access and refresh tokens (HTTP 200)")
+    void testRefreshTokenSuccess() throws Exception {
+        LoginRequest loginRequest = LoginRequest.builder()
+                .email(TEST_EMAIL)
+                .password(TEST_PASSWORD)
+                .build();
+
+        String loginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token", notNullValue()))
+                .andExpect(jsonPath("$.refreshToken", notNullValue()))
+                .andReturn().getResponse().getContentAsString();
+
+        String refreshToken = objectMapper.readTree(loginResponse).get("refreshToken").asText();
+
+        com.expensetracker.dto.RefreshTokenRequest refreshReq = com.expensetracker.dto.RefreshTokenRequest.builder()
+                .refreshToken(refreshToken)
+                .build();
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(refreshReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token", notNullValue()))
+                .andExpect(jsonPath("$.refreshToken", notNullValue()))
+                .andExpect(jsonPath("$.email").value(TEST_EMAIL));
+    }
+
+    @Test
+    @DisplayName("Scenario 13: Token Refresh - Invalid or tampered refresh token rejected (HTTP 401)")
+    void testRefreshTokenInvalid() throws Exception {
+        com.expensetracker.dto.RefreshTokenRequest refreshReq = com.expensetracker.dto.RefreshTokenRequest.builder()
+                .refreshToken("invalid.tampered.token")
+                .build();
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(refreshReq)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Scenario 14: Token Refresh - Access token presented as refresh token is rejected (HTTP 401)")
+    void testRefreshTokenWithAccessTokenRejected() throws Exception {
+        LoginRequest loginRequest = LoginRequest.builder()
+                .email(TEST_EMAIL)
+                .password(TEST_PASSWORD)
+                .build();
+
+        String loginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        String accessToken = objectMapper.readTree(loginResponse).get("token").asText();
+
+        com.expensetracker.dto.RefreshTokenRequest refreshReq = com.expensetracker.dto.RefreshTokenRequest.builder()
+                .refreshToken(accessToken)
+                .build();
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(refreshReq)))
+                .andExpect(status().isUnauthorized());
+    }
 }
 

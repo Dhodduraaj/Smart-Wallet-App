@@ -1,10 +1,11 @@
-import { getStoredData, saveStoredData, mergeCloudDataIntoLocal } from './db';
-import { getStoredQueue, processQueue, getSyncStatus } from './syncQueue';
+import { getStoredData, saveStoredData, mergeCloudDataIntoLocal } from './db.js';
+import { getStoredQueue, processQueue, getSyncStatus } from './syncQueue.js';
 import axios from 'axios';
+import { refreshAccessToken } from './api.js';
 
 // Network-only axios client for sync operations to bypass adapter
 export const apiNetwork = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8081',
+  baseURL: (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:8081',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -20,6 +21,29 @@ apiNetwork.interceptors.request.use(
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+// Response interceptor to automatically refresh expired access token and retry sync request
+apiNetwork.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalConfig = error.config;
+    const url = originalConfig?.url || '';
+    const isAuthEndpoint = url.includes('/api/auth/');
+
+    if (error.response?.status === 401 && !isAuthEndpoint && originalConfig && !originalConfig._retry) {
+      originalConfig._retry = true;
+      try {
+        const newToken = await refreshAccessToken();
+        originalConfig.headers = originalConfig.headers || {};
+        originalConfig.headers['Authorization'] = `Bearer ${newToken}`;
+        return apiNetwork(originalConfig);
+      } catch (refreshErr) {
+        return Promise.reject(refreshErr);
+      }
+    }
+    return Promise.reject(error);
+  }
 );
 
 let isSyncing = false;
@@ -297,7 +321,9 @@ export async function manualUnifiedSync() {
 }
 
 // Clear sync status on logout
-window.addEventListener('auth-logout', () => {
-  console.info('[Sync Engine] User logged out.');
-});
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('auth-logout', () => {
+    console.info('[Sync Engine] User logged out.');
+  });
+}
 

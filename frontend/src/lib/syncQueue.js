@@ -1,6 +1,7 @@
 import { Preferences } from '@capacitor/preferences';
 import axios from 'axios';
 import { getStoredData, saveStoredData, generateUUID } from './db.js';
+import { refreshAccessToken } from './api.js';
 
 const QUEUE_STORAGE_KEY = 'smart_wallet_sync_queue';
 const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) || 'http://localhost:8081';
@@ -24,6 +25,29 @@ syncClient.interceptors.request.use(
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+// Response interceptor to automatically refresh expired access token and retry sync request
+syncClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalConfig = error.config;
+    const url = originalConfig?.url || '';
+    const isAuthEndpoint = url.includes('/api/auth/');
+
+    if (error.response?.status === 401 && !isAuthEndpoint && originalConfig && !originalConfig._retry) {
+      originalConfig._retry = true;
+      try {
+        const newToken = await refreshAccessToken();
+        originalConfig.headers = originalConfig.headers || {};
+        originalConfig.headers['Authorization'] = `Bearer ${newToken}`;
+        return syncClient(originalConfig);
+      } catch (refreshErr) {
+        return Promise.reject(refreshErr);
+      }
+    }
+    return Promise.reject(error);
+  }
 );
 
 let isProcessing = false;

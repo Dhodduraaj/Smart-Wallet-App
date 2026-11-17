@@ -223,11 +223,14 @@ public class AccountRecoveryService {
             log.info("Created cloud user during fast recovery: {} with ID: {}", normalizedEmail, user.getId());
         }
 
-        // Generate 30-day JWT session token immediately
+        // Generate 30-day JWT session token and refresh token immediately
         String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getFullName());
+        String refreshToken = tokenProvider.generateRefreshToken(user.getId(), user.getEmail());
 
         return ResponseEntity.ok(AuthResponse.builder()
                 .token(token)
+                .refreshToken(refreshToken)
+                .expiresIn(tokenProvider.getExpirationInMs())
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())

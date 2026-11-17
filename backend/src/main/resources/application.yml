@@ -45,6 +45,7 @@ app:
     # 512-bit strong base64 encoded secret key
     secret: ${JWT_SECRET:4zV7A9gK2mN5qR8uW1xY0zC3bV6n9qRvY2t5w8y/B?E(G+KbPeShVkYp3s6v9y$B}
     expiration-ms: ${JWT_EXPIRATION:2592000000}
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION:2592000000}
   firebase:
     enabled: ${FIREBASE_ENABLED:false}
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}

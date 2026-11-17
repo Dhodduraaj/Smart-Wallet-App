@@ -19,5 +19,6 @@ app:
   jwt:
     secret: 4zV7A9gK2mN5qR8uW1xY0zC3bV6n9qRvY2t5w8y/B?E(G+KbPeShVkYp3s6v9y$B}
     expiration-ms: 3600000
+    refresh-expiration-ms: 7200000
   firebase:
     enabled: false

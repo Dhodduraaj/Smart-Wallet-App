@@ -1,8 +1,8 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import api from '../lib/api';
-import { getStoredData, saveStoredData, restoreDbFromBackup, clearLocalDb, generateUUID } from '../lib/db';
-import { sync, apiNetwork } from '../lib/sync';
-import { enqueueAllLocalRecords } from '../lib/syncQueue';
+import api, { refreshAccessToken, storeAuthTokens, clearAuthTokens } from '../lib/api.js';
+import { getStoredData, saveStoredData, restoreDbFromBackup, clearLocalDb, generateUUID } from '../lib/db.js';
+import { sync, apiNetwork } from '../lib/sync.js';
+import { enqueueAllLocalRecords } from '../lib/syncQueue.js';
 import { Preferences } from '@capacitor/preferences';
 
 const AuthContext = createContext(null);
@@ -27,6 +27,53 @@ export const isJwtTokenExpired = (token) => {
     console.warn('[Auth] Failed to decode JWT token for expiry check:', err);
     return false;
   }
+};
+
+export const is30DaySessionExpired = (accessToken, refreshToken, sessionExpiryTimestamp) => {
+  const now = Date.now();
+  // 1. If explicit sessionExpiry timestamp exists, check if 30 days passed
+  if (sessionExpiryTimestamp) {
+    const expiryNum = Number(sessionExpiryTimestamp);
+    if (!isNaN(expiryNum) && expiryNum > 0) {
+      if (now > expiryNum) {
+        return true; // 30-day session expired
+      }
+    }
+  }
+
+  // 2. If refreshToken exists, decode its JWT exp claim if present
+  if (refreshToken && typeof refreshToken === 'string') {
+    try {
+      const parts = refreshToken.split('.');
+      if (parts.length === 3) {
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          (typeof atob === 'function' ? atob(base64) : Buffer.from(base64, 'base64').toString('binary'))
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+        const decoded = JSON.parse(jsonPayload);
+        if (decoded && typeof decoded.exp === 'number') {
+          // If refresh token JWT itself has expired (>30 days)
+          return (now / 1000) >= decoded.exp;
+        }
+      }
+    } catch {
+      // ignore parse error, fallback
+    }
+    // Refresh token is present and valid
+    return false;
+  }
+
+  // 3. Fallback: if only accessToken is present without refreshToken or sessionExpiry
+  if (accessToken && typeof accessToken === 'string') {
+    return isJwtTokenExpired(accessToken);
+  }
+
+  // No credentials present
+  return true;
 };
 
 export const hasLocalFinancialData = (store) => {
@@ -85,6 +132,8 @@ export const AuthProvider = ({ children }) => {
       try {
         let prefStoredData = null;
         let prefToken = null;
+        let prefRefreshToken = null;
+        let prefSessionExpiry = null;
 
         // 1. Safely attempt to read native Capacitor Preferences (SharedPreferences on Android)
         try {
@@ -92,12 +141,19 @@ export const AuthProvider = ({ children }) => {
           prefStoredData = prefDataRes?.value;
           const prefTokenRes = await Preferences.get({ key: 'token' });
           prefToken = prefTokenRes?.value;
+          const prefRefreshRes = await Preferences.get({ key: 'refreshToken' });
+          prefRefreshToken = prefRefreshRes?.value;
+          const prefExpiryRes = await Preferences.get({ key: 'sessionExpiry' });
+          prefSessionExpiry = prefExpiryRes?.value;
         } catch (prefErr) {
           console.warn('[Auth Bootstrap] Native Preferences read failed or not available:', prefErr);
         }
 
         // 2. Check local storage
         const localRaw = localStorage.getItem('smart_wallet_data');
+        const localToken = localStorage.getItem('token');
+        const localRefreshToken = localStorage.getItem('refreshToken');
+        const localSessionExpiry = localStorage.getItem('sessionExpiry');
 
         // 3. Hydrate or reconcile between Preferences and localStorage
         if (prefStoredData) {
@@ -123,25 +179,38 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        if (prefToken && !localStorage.getItem('token')) {
-          localStorage.setItem('token', prefToken);
-        } else if (!prefToken && localStorage.getItem('token')) {
-          try {
-            await Preferences.set({ key: 'token', value: localStorage.getItem('token') });
-          } catch {}
+        const token = localToken || prefToken;
+        const refreshToken = localRefreshToken || prefRefreshToken;
+        const sessionExpiry = localSessionExpiry || prefSessionExpiry;
+
+        if (token) {
+          if (!localToken) localStorage.setItem('token', token);
+          if (!prefToken) {
+            try { await Preferences.set({ key: 'token', value: token }); } catch {}
+          }
+        }
+        if (refreshToken) {
+          if (!localRefreshToken) localStorage.setItem('refreshToken', refreshToken);
+          if (!prefRefreshToken) {
+            try { await Preferences.set({ key: 'refreshToken', value: refreshToken }); } catch {}
+          }
+        }
+        if (sessionExpiry) {
+          if (!localSessionExpiry) localStorage.setItem('sessionExpiry', sessionExpiry);
+          if (!prefSessionExpiry) {
+            try { await Preferences.set({ key: 'sessionExpiry', value: sessionExpiry }); } catch {}
+          }
         }
 
         // 4. Retrieve stored data through standard db layer
         const store = getStoredData();
-        const token = localStorage.getItem('token') || prefToken;
 
-        // 5. Check authentication state & validate session
+        // 5. Check authentication state & validate 30-day persistent session
         if (store && store.isAuthenticated === true && store.data && store.data.profile) {
-          // Verify JWT expiry locally without blocking app startup
-          if (token && isJwtTokenExpired(token)) {
-            console.warn('[Auth Bootstrap] Token expired based on JWT claims. Logging out.');
-            localStorage.removeItem('token');
-            try { await Preferences.remove({ key: 'token' }); } catch {}
+          // Check if the 30-day session has genuinely expired
+          if (is30DaySessionExpired(token, refreshToken, sessionExpiry)) {
+            console.warn('[Auth Bootstrap] 30-day session expired. Logging out.');
+            await clearAuthTokens();
             store.isAuthenticated = false;
             saveStoredData(store);
             try {
@@ -158,28 +227,39 @@ export const AuthProvider = ({ children }) => {
           setLoading(false);
 
           // Non-blocking fire-and-forget background verification only if online
-          if (token && navigator.onLine) {
-            api.get('/api/auth/me').then(meRes => {
-              if (meRes?.data) {
-                const freshStore = getStoredData();
-                if (meRes.data.userId) freshStore.localUserId = meRes.data.userId;
-                if (freshStore.data?.profile) {
-                  freshStore.data.profile.userId = meRes.data.userId || freshStore.data.profile.userId;
-                  if (meRes.data.fullName) freshStore.data.profile.fullName = meRes.data.fullName;
+          if (navigator.onLine) {
+            if (token && isJwtTokenExpired(token) && refreshToken) {
+              console.info('[Auth Bootstrap] Access token expired; silently refreshing 30-day session in background...');
+              refreshAccessToken().then(() => {
+                api.get('/api/auth/me').then(meRes => {
+                  if (meRes?.data) {
+                    const freshStore = getStoredData();
+                    if (meRes.data.userId) freshStore.localUserId = meRes.data.userId;
+                    if (freshStore.data?.profile) {
+                      freshStore.data.profile.userId = meRes.data.userId || freshStore.data.profile.userId;
+                      if (meRes.data.fullName) freshStore.data.profile.fullName = meRes.data.fullName;
+                    }
+                    saveStoredData(freshStore);
+                  }
+                }).catch(() => {});
+              }).catch(refreshErr => {
+                console.warn('[Auth Bootstrap] Silent background refresh failed (cold-start / offline resilience):', refreshErr?.message);
+              });
+            } else if (token) {
+              api.get('/api/auth/me').then(meRes => {
+                if (meRes?.data) {
+                  const freshStore = getStoredData();
+                  if (meRes.data.userId) freshStore.localUserId = meRes.data.userId;
+                  if (freshStore.data?.profile) {
+                    freshStore.data.profile.userId = meRes.data.userId || freshStore.data.profile.userId;
+                    if (meRes.data.fullName) freshStore.data.profile.fullName = meRes.data.fullName;
+                  }
+                  saveStoredData(freshStore);
                 }
-                saveStoredData(freshStore);
-              }
-            }).catch(authErr => {
-              if (authErr.response?.status === 401) {
-                console.warn('[Auth Background] Token rejected by backend (401). Logging out.');
-                localStorage.removeItem('token');
-                try { Preferences.remove({ key: 'token' }).catch(() => {}); } catch {}
-                const currentStore = getStoredData();
-                currentStore.isAuthenticated = false;
-                saveStoredData(currentStore);
-                setUser(null);
-              }
-            });
+              }).catch(() => {
+                // api response interceptor handles 401 refresh or preserves session during cold start
+              });
+            }
           }
 
           // Ensure native Preferences also has the latest stored data
@@ -193,7 +273,7 @@ export const AuthProvider = ({ children }) => {
             try {
               const parsedPref = JSON.parse(prefStoredData);
               if (parsedPref && parsedPref.isAuthenticated === true && parsedPref.data && parsedPref.data.profile) {
-                if (!prefToken || !isJwtTokenExpired(prefToken)) {
+                if (!is30DaySessionExpired(prefToken, prefRefreshToken, prefSessionExpiry)) {
                   localStorage.setItem('smart_wallet_data', prefStoredData);
                   setUser(buildUserProfile(parsedPref));
                   setLoading(false);
@@ -208,9 +288,11 @@ export const AuthProvider = ({ children }) => {
             if (raw) {
               const parsed = JSON.parse(raw);
               if (parsed && parsed.isAuthenticated === true && parsed.data && parsed.data.profile) {
-                setUser(buildUserProfile(parsed));
-                setLoading(false);
-                return;
+                if (!is30DaySessionExpired(token, refreshToken, sessionExpiry)) {
+                  setUser(buildUserProfile(parsed));
+                  setLoading(false);
+                  return;
+                }
               }
             }
           } catch {}
@@ -316,7 +398,7 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      const { token, userId, fullName: resFullName } = response.data || {};
+      const { token, refreshToken, expiresIn, userId, fullName: resFullName } = response.data || {};
       if (!token) {
         throw new Error('Recovery failed: No token received from server');
       }
@@ -329,13 +411,12 @@ export const AuthProvider = ({ children }) => {
       });
       await new Promise(r => setTimeout(r, 200));
 
-      // Save token in dual storage
-      localStorage.setItem('token', token);
-      try {
-        await Preferences.set({ key: 'token', value: token });
-      } catch (prefErr) {
-        console.warn('[Recovery] Failed to save token to Preferences:', prefErr);
-      }
+      // Save tokens in dual storage
+      storeAuthTokens({
+        token,
+        refreshToken,
+        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+      });
 
       // Preserve all existing local data while updating identity and authentication state
       store.email = normalizedEmail;
@@ -405,18 +486,17 @@ export const AuthProvider = ({ children }) => {
         password: password
       });
 
-      const { token, userId, fullName } = response.data || {};
+      const { token, refreshToken, expiresIn, userId, fullName } = response.data || {};
       if (!token) {
         throw new Error('Authentication failed: No token received from server');
       }
 
-      // Persist token in localStorage and Capacitor Preferences
-      localStorage.setItem('token', token);
-      try {
-        await Preferences.set({ key: 'token', value: token });
-      } catch (prefErr) {
-        console.warn('[Auth Login] Failed to save token to Preferences:', prefErr);
-      }
+      // Persist tokens in localStorage and Capacitor Preferences
+      storeAuthTokens({
+        token,
+        refreshToken,
+        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+      });
 
       onProgress?.({
         step: 2,
@@ -527,18 +607,17 @@ export const AuthProvider = ({ children }) => {
         password: password
       });
 
-      const { token, userId, fullName: resFullName } = response.data || {};
+      const { token, refreshToken, expiresIn, userId, fullName: resFullName } = response.data || {};
       if (!token) {
         throw new Error('Registration failed: No token received from server');
       }
 
-      // 2. Persist token in localStorage and Capacitor Preferences
-      localStorage.setItem('token', token);
-      try {
-        await Preferences.set({ key: 'token', value: token });
-      } catch (prefErr) {
-        console.warn('[Auth Register] Failed to save token to Preferences:', prefErr);
-      }
+      // Persist tokens in localStorage and Capacitor Preferences
+      storeAuthTokens({
+        token,
+        refreshToken,
+        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+      });
 
       // 3. Save details locally and set isAuthenticated to true
       store.localUserId = userId || generateUUID();
@@ -577,10 +656,8 @@ export const AuthProvider = ({ children }) => {
     store.isAuthenticated = false;
     saveStoredData(store);
     setUser(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    await clearAuthTokens();
     try {
-      await Preferences.remove({ key: 'token' });
       await Preferences.set({ key: 'smart_wallet_data', value: JSON.stringify(store) });
     } catch (err) {
       console.warn('[Auth Logout] Failed to clear Preferences:', err);

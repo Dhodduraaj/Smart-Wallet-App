@@ -11,6 +11,7 @@ import java.util.UUID;
 @Builder
 public class AuthResponse {
     private String token;
+    private String refreshToken;
     @Builder.Default
     private String tokenType = "Bearer";
     private UUID userId;
@@ -19,5 +20,6 @@ public class AuthResponse {
     private Boolean onboardingCompleted;
     private String avatar;
     private String message;
+    private Long expiresIn;
     private java.util.Map<String, Integer> syncedCounts;
 }

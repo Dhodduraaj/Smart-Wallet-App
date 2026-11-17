@@ -3,6 +3,7 @@ package com.expensetracker.controller;
 import com.expensetracker.dto.AccountRecoveryRequest;
 import com.expensetracker.dto.AuthResponse;
 import com.expensetracker.dto.LoginRequest;
+import com.expensetracker.dto.RefreshTokenRequest;
 import com.expensetracker.dto.RegisterRequest;
 import com.expensetracker.dto.UserDto;
 import com.expensetracker.entity.User;
@@ -73,9 +74,12 @@ public class AuthController {
         }
 
         String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getFullName());
+        String refreshToken = tokenProvider.generateRefreshToken(user.getId(), user.getEmail());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(AuthResponse.builder()
                 .token(token)
+                .refreshToken(refreshToken)
+                .expiresIn(tokenProvider.getExpirationInMs())
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
@@ -110,9 +114,46 @@ public class AuthController {
 
         log.info("Login successful for email: {}", normalizedEmail);
         String token = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getFullName());
+        String refreshToken = tokenProvider.generateRefreshToken(user.getId(), user.getEmail());
 
         return ResponseEntity.ok(AuthResponse.builder()
                 .token(token)
+                .refreshToken(refreshToken)
+                .expiresIn(tokenProvider.getExpirationInMs())
+                .userId(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .onboardingCompleted(true)
+                .build());
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Refresh access token using valid 30-day refresh token")
+    public ResponseEntity<?> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        String refreshToken = request.getRefreshToken();
+        if (!tokenProvider.validateRefreshToken(refreshToken)) {
+            log.warn("Token refresh failed: Invalid or expired refresh token");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Invalid or expired session. Please log in again."));
+        }
+
+        String email = tokenProvider.getEmailFromJWT(refreshToken);
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            log.warn("Token refresh failed: User not found for email {}", email);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not found"));
+        }
+
+        User user = userOpt.get();
+        String newAccessToken = tokenProvider.generateToken(user.getId(), user.getEmail(), user.getFullName());
+        String newRefreshToken = tokenProvider.generateRefreshToken(user.getId(), user.getEmail());
+
+        log.info("Token refresh successful for user: {}", email);
+        return ResponseEntity.ok(AuthResponse.builder()
+                .token(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .expiresIn(tokenProvider.getExpirationInMs())
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
