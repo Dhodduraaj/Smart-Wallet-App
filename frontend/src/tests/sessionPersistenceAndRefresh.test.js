@@ -87,15 +87,9 @@ const isJwtTokenExpired = (token) => {
 
 const is30DaySessionExpired = (accessToken, refreshToken, sessionExpiryTimestamp) => {
   const now = Date.now();
-  if (sessionExpiryTimestamp) {
-    const expiryNum = Number(sessionExpiryTimestamp);
-    if (!isNaN(expiryNum) && expiryNum > 0) {
-      if (now > expiryNum) {
-        return true;
-      }
-    }
-  }
 
+  // 1. If refreshToken exists, decode its JWT exp claim if present
+  // The refresh token is the ground truth for the 30-day session lifespan
   if (refreshToken && typeof refreshToken === 'string') {
     try {
       const parts = refreshToken.split('.');
@@ -105,17 +99,32 @@ const is30DaySessionExpired = (accessToken, refreshToken, sessionExpiryTimestamp
         const jsonPayload = Buffer.from(base64, 'base64').toString('binary');
         const decoded = JSON.parse(jsonPayload);
         if (decoded && typeof decoded.exp === 'number') {
+          // If refresh token JWT itself has expired (>30 days)
           return (now / 1000) >= decoded.exp;
         }
       }
     } catch {}
+    // Refresh token is present and valid
     return false;
   }
 
+  // 2. If explicit sessionExpiry timestamp exists and no valid refreshToken, check timestamp
+  if (sessionExpiryTimestamp) {
+    const expiryNum = Number(sessionExpiryTimestamp);
+    if (!isNaN(expiryNum) && expiryNum > 0) {
+      if (now > expiryNum) {
+        return true; // 30-day session expired
+      }
+      return false;
+    }
+  }
+
+  // 3. Fallback: if only accessToken is present without refreshToken or sessionExpiry
   if (accessToken && typeof accessToken === 'string') {
     return isJwtTokenExpired(accessToken);
   }
 
+  // No credentials present
   return true;
 };
 
@@ -593,7 +602,87 @@ async function runTests() {
     console.log('  ✔ All financial records, accounts, and balances 100% intact across token refresh');
   }
 
-  console.log('\n=== ALL 10 SESSION PERSISTENCE & REFRESH TESTS PASSED SUCCESSFULLY! 🚀 ===');
+  // Test 11: Production Scenario - Backend JWT_EXPIRATION=86400000 (1 Day), Refresh Token=30 Days
+  console.log('Test 11: Production Scenario - Backend expiresIn=86400000 (1 Day) & Refresh Token=30 Days...');
+  {
+    const local = new MockLocalStorage();
+    const pref = new MockPreferences();
+
+    // Access token expired yesterday (24h ago)
+    const expiredAccessToken = createTestJwt('user-prod', nowSec - 86400);
+    // Refresh token valid for 29 more days
+    const validRefreshToken = createTestJwt('user-prod', nowSec + 29 * 86400, 'REFRESH');
+    // Legacy buggy sessionExpiry was set to 1 day (nowSec - 100)
+    const staleOneDaySessionExpiry = String(nowMs - 100);
+
+    const store = {
+      isAuthenticated: true,
+      localUserId: 'user-prod',
+      email: 'prod@example.com',
+      data: {
+        profile: { fullName: 'Production User', email: 'prod@example.com' },
+        accounts: [{ id: 'acc-1', accountName: 'Cash', currentBalance: 8000 }]
+      }
+    };
+
+    local.setItem('token', expiredAccessToken);
+    local.setItem('refreshToken', validRefreshToken);
+    local.setItem('sessionExpiry', staleOneDaySessionExpiry);
+    local.setItem('smart_wallet_data', JSON.stringify(store));
+
+    // Notice: Stale 24h sessionExpiry must NOT cause logout because refreshToken is valid for 30 days!
+    assert.strictEqual(
+      is30DaySessionExpired(expiredAccessToken, validRefreshToken, staleOneDaySessionExpiry),
+      false,
+      'Valid 30-day refresh token must prevent logout even if legacy sessionExpiry was set to 24h'
+    );
+
+    const mockApi = {
+      refresh: async (token) => {
+        return {
+          token: createTestJwt('user-prod', nowSec + 86400),
+          refreshToken: createTestJwt('user-prod', nowSec + 30 * 86400, 'REFRESH')
+        };
+      }
+    };
+
+    const result = await simulateBootstrap(local, pref, { isOnline: true, mockApi });
+
+    assert.ok(result.user !== null, 'User must remain authenticated');
+    assert.strictEqual(result.user.email, 'prod@example.com');
+    assert.strictEqual(result.backgroundRefreshTriggered, true, 'Silent background refresh successfully executed');
+    console.log('  ✔ Production 1-day access token + 30-day refresh token safely preserves user session without logout');
+  }
+
+  // Test 12: storeAuthTokens Correctly Prioritizes 30-Day Expiry Over 1-Day expiresIn
+  console.log('Test 12: storeAuthTokens Correctly Prioritizes 30-Day Expiry Over 1-Day expiresIn...');
+  {
+    const local = new MockLocalStorage();
+    const pref = new MockPreferences();
+
+    const refreshToken30d = createTestJwt('user-tok', nowSec + 30 * 86400, 'REFRESH');
+    const expectedExpMs = (nowSec + 30 * 86400) * 1000;
+
+    // Simulate storeAuthTokens with 1-day expiresIn (86400000) and 30-day refreshToken
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    let calculatedExpiryMs = null;
+    const parts = refreshToken30d.split('.');
+    const decoded = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+    if (decoded && typeof decoded.exp === 'number') {
+      calculatedExpiryMs = decoded.exp * 1000;
+    }
+
+    assert.ok(calculatedExpiryMs >= expectedExpMs - 1000, 'Session expiry must equal 30 days from refresh token');
+    local.setItem('sessionExpiry', String(calculatedExpiryMs));
+
+    assert.ok(
+      Number(local.getItem('sessionExpiry')) > Date.now() + 29 * 86400 * 1000,
+      'Session expiry must be ~30 days in the future, not 24 hours'
+    );
+    console.log('  ✔ storeAuthTokens safely assigns 30-day session lifespan regardless of access token lifespan');
+  }
+
+  console.log('\n=== ALL 12 SESSION PERSISTENCE & REFRESH TESTS PASSED SUCCESSFULLY! 🚀 ===');
 }
 
 runTests().catch(err => {

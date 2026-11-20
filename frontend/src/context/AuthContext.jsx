@@ -31,17 +31,9 @@ export const isJwtTokenExpired = (token) => {
 
 export const is30DaySessionExpired = (accessToken, refreshToken, sessionExpiryTimestamp) => {
   const now = Date.now();
-  // 1. If explicit sessionExpiry timestamp exists, check if 30 days passed
-  if (sessionExpiryTimestamp) {
-    const expiryNum = Number(sessionExpiryTimestamp);
-    if (!isNaN(expiryNum) && expiryNum > 0) {
-      if (now > expiryNum) {
-        return true; // 30-day session expired
-      }
-    }
-  }
 
-  // 2. If refreshToken exists, decode its JWT exp claim if present
+  // 1. If refreshToken exists, decode its JWT exp claim if present
+  // The refresh token is the ground truth for the 30-day session lifespan
   if (refreshToken && typeof refreshToken === 'string') {
     try {
       const parts = refreshToken.split('.');
@@ -65,6 +57,17 @@ export const is30DaySessionExpired = (accessToken, refreshToken, sessionExpiryTi
     }
     // Refresh token is present and valid
     return false;
+  }
+
+  // 2. If explicit sessionExpiry timestamp exists and no valid refreshToken, check timestamp
+  if (sessionExpiryTimestamp) {
+    const expiryNum = Number(sessionExpiryTimestamp);
+    if (!isNaN(expiryNum) && expiryNum > 0) {
+      if (now > expiryNum) {
+        return true; // 30-day session expired
+      }
+      return false;
+    }
   }
 
   // 3. Fallback: if only accessToken is present without refreshToken or sessionExpiry
@@ -199,6 +202,13 @@ export const AuthProvider = ({ children }) => {
           if (!localSessionExpiry) localStorage.setItem('sessionExpiry', sessionExpiry);
           if (!prefSessionExpiry) {
             try { await Preferences.set({ key: 'sessionExpiry', value: sessionExpiry }); } catch {}
+          }
+        }
+
+        // Auto-heal sessionExpiry if it was previously set to 24h by old buggy version
+        if (refreshToken && !is30DaySessionExpired(token, refreshToken, sessionExpiry)) {
+          if (!sessionExpiry || Number(sessionExpiry) < Date.now() + 7 * 24 * 60 * 60 * 1000) {
+            storeAuthTokens({ token, refreshToken });
           }
         }
 
@@ -398,7 +408,7 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      const { token, refreshToken, expiresIn, userId, fullName: resFullName } = response.data || {};
+      const { token, refreshToken, expiresIn, refreshExpiresIn, userId, fullName: resFullName } = response.data || {};
       if (!token) {
         throw new Error('Recovery failed: No token received from server');
       }
@@ -415,7 +425,8 @@ export const AuthProvider = ({ children }) => {
       storeAuthTokens({
         token,
         refreshToken,
-        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+        expiresIn,
+        refreshExpiresIn
       });
 
       // Preserve all existing local data while updating identity and authentication state
@@ -486,7 +497,7 @@ export const AuthProvider = ({ children }) => {
         password: password
       });
 
-      const { token, refreshToken, expiresIn, userId, fullName } = response.data || {};
+      const { token, refreshToken, expiresIn, refreshExpiresIn, userId, fullName } = response.data || {};
       if (!token) {
         throw new Error('Authentication failed: No token received from server');
       }
@@ -495,7 +506,8 @@ export const AuthProvider = ({ children }) => {
       storeAuthTokens({
         token,
         refreshToken,
-        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+        expiresIn,
+        refreshExpiresIn
       });
 
       onProgress?.({
@@ -607,7 +619,7 @@ export const AuthProvider = ({ children }) => {
         password: password
       });
 
-      const { token, refreshToken, expiresIn, userId, fullName: resFullName } = response.data || {};
+      const { token, refreshToken, expiresIn, refreshExpiresIn, userId, fullName: resFullName } = response.data || {};
       if (!token) {
         throw new Error('Registration failed: No token received from server');
       }
@@ -616,7 +628,8 @@ export const AuthProvider = ({ children }) => {
       storeAuthTokens({
         token,
         refreshToken,
-        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+        expiresIn,
+        refreshExpiresIn
       });
 
       // 3. Save details locally and set isAuthenticated to true

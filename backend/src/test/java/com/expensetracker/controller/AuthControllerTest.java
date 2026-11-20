@@ -287,6 +287,8 @@ public class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token", notNullValue()))
                 .andExpect(jsonPath("$.refreshToken", notNullValue()))
+                .andExpect(jsonPath("$.expiresIn", notNullValue()))
+                .andExpect(jsonPath("$.refreshExpiresIn", notNullValue()))
                 .andReturn().getResponse().getContentAsString();
 
         String refreshToken = objectMapper.readTree(loginResponse).get("refreshToken").asText();
@@ -301,6 +303,8 @@ public class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token", notNullValue()))
                 .andExpect(jsonPath("$.refreshToken", notNullValue()))
+                .andExpect(jsonPath("$.expiresIn", notNullValue()))
+                .andExpect(jsonPath("$.refreshExpiresIn", notNullValue()))
                 .andExpect(jsonPath("$.email").value(TEST_EMAIL));
     }
 

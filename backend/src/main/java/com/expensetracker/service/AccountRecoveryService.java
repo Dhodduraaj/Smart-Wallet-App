@@ -231,6 +231,7 @@ public class AccountRecoveryService {
                 .token(token)
                 .refreshToken(refreshToken)
                 .expiresIn(tokenProvider.getExpirationInMs())
+                .refreshExpiresIn(tokenProvider.getRefreshExpirationInMs())
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())

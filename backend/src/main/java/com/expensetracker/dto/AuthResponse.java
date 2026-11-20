@@ -21,5 +21,6 @@ public class AuthResponse {
     private String avatar;
     private String message;
     private Long expiresIn;
+    private Long refreshExpiresIn;
     private java.util.Map<String, Integer> syncedCounts;
 }

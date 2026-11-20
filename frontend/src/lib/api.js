@@ -426,7 +426,7 @@ const customOfflineAdapter = async (config) => {
   return axios(netConfig);
 };
 
-export const storeAuthTokens = ({ token, refreshToken, expiresIn }) => {
+export const storeAuthTokens = ({ token, refreshToken, expiresIn, refreshExpiresIn }) => {
   if (token) {
     localStorage.setItem('token', token);
     Preferences.set({ key: 'token', value: token }).catch(() => {});
@@ -435,11 +435,48 @@ export const storeAuthTokens = ({ token, refreshToken, expiresIn }) => {
     localStorage.setItem('refreshToken', refreshToken);
     Preferences.set({ key: 'refreshToken', value: refreshToken }).catch(() => {});
   }
-  if (expiresIn) {
-    const sessionExpiry = String(Date.now() + Number(expiresIn));
-    localStorage.setItem('sessionExpiry', sessionExpiry);
-    Preferences.set({ key: 'sessionExpiry', value: sessionExpiry }).catch(() => {});
+
+  // 30-Day Session Expiry calculation:
+  // 1. If refreshExpiresIn is provided (> 0), use Date.now() + refreshExpiresIn
+  // 2. If refreshToken has a valid JWT exp claim, decode it (exp * 1000)
+  // 3. If expiresIn is provided and is a 30-day value (> 7 days), use Date.now() + expiresIn
+  // 4. Default to full 30 days: Date.now() + 30 * 24 * 60 * 60 * 1000 (2,592,000,000 ms)
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  let sessionExpiryMs = null;
+
+  if (refreshExpiresIn && Number(refreshExpiresIn) > 0) {
+    sessionExpiryMs = Date.now() + Number(refreshExpiresIn);
+  } else if (refreshToken && typeof refreshToken === 'string') {
+    try {
+      const parts = refreshToken.split('.');
+      if (parts.length === 3) {
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          (typeof atob === 'function' ? atob(base64) : Buffer.from(base64, 'base64').toString('binary'))
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+        const decoded = JSON.parse(jsonPayload);
+        if (decoded && typeof decoded.exp === 'number') {
+          sessionExpiryMs = decoded.exp * 1000;
+        }
+      }
+    } catch {}
   }
+
+  if (!sessionExpiryMs) {
+    if (expiresIn && Number(expiresIn) > 7 * 24 * 60 * 60 * 1000) {
+      sessionExpiryMs = Date.now() + Number(expiresIn);
+    } else {
+      sessionExpiryMs = Date.now() + THIRTY_DAYS_MS;
+    }
+  }
+
+  const sessionExpiry = String(sessionExpiryMs);
+  localStorage.setItem('sessionExpiry', sessionExpiry);
+  Preferences.set({ key: 'sessionExpiry', value: sessionExpiry }).catch(() => {});
 };
 
 export const clearAuthTokens = async () => {
@@ -481,7 +518,7 @@ export const refreshAccessToken = async () => {
         timeout: 15000
       });
 
-      const { token: newAccessToken, refreshToken: newRefreshToken, expiresIn } = response.data || {};
+      const { token: newAccessToken, refreshToken: newRefreshToken, expiresIn, refreshExpiresIn } = response.data || {};
       if (!newAccessToken) {
         throw new Error('Refresh failed: No access token received');
       }
@@ -489,7 +526,8 @@ export const refreshAccessToken = async () => {
       storeAuthTokens({
         token: newAccessToken,
         refreshToken: newRefreshToken || refreshToken,
-        expiresIn: expiresIn || 30 * 24 * 60 * 60 * 1000
+        expiresIn: expiresIn,
+        refreshExpiresIn: refreshExpiresIn
       });
 
       return newAccessToken;
