@@ -393,6 +393,12 @@ const customOfflineAdapter = async (config) => {
         if (!person) throw { status: 404, message: 'Person not found' };
         return mockResponse(person);
       }
+      if (method === 'PUT') {
+        const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+        const updated = await localDb.saveLocalPerson({ ...payload, id: personId });
+        setTimeout(() => sync(), 100);
+        return mockResponse(updated);
+      }
       if (method === 'DELETE') {
         await localDb.deleteLocalPerson(personId);
         setTimeout(() => sync(), 100);

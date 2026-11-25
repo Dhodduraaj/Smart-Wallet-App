@@ -76,6 +76,9 @@ public class SyncController {
             }
         }
 
+        // Sanitize deleted records from payload before storing backup
+        sanitizeRequestPayload(request);
+
         // Save full JSON backup
         try {
             String payload = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(request);
@@ -139,6 +142,9 @@ public class SyncController {
                 return ResponseEntity.badRequest().body(Map.of("message", "User not found and email is missing"));
             }
         }
+
+        // Sanitize deleted records from payload before storing backup
+        sanitizeRequestPayload(request);
 
         // Save full JSON backup
         try {
@@ -250,6 +256,8 @@ public class SyncController {
                 sanitizeDeletedList(finalPayload, "incomes", deletedIdSet);
                 sanitizeDeletedList(finalPayload, "reminders", deletedIdSet);
                 sanitizeDeletedList(finalPayload, "transfers", deletedIdSet);
+                sanitizeDeletedList(finalPayload, "people", deletedIdSet);
+                sanitizeDeletedList(finalPayload, "peopleLedger", deletedIdSet);
             }
         }
 
@@ -260,6 +268,32 @@ public class SyncController {
 
         log.info("Successfully assembled pull payload for user ID: {}", targetUserId);
         return ResponseEntity.ok(response);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void sanitizeRequestPayload(Map<String, Object> request) {
+        if (request == null) return;
+        try {
+            Object p = request.get("payload");
+            if (p instanceof Map) {
+                Map<String, Object> payloadMap = (Map<String, Object>) p;
+                Object delObj = payloadMap.get("deletedIds");
+                if (delObj instanceof List<?>) {
+                    Set<String> deletedIdSet = new HashSet<>();
+                    for (Object d : (List<?>) delObj) {
+                        if (d != null) deletedIdSet.add(d.toString().trim().toLowerCase());
+                    }
+                    if (!deletedIdSet.isEmpty()) {
+                        sanitizeDeletedList(payloadMap, "expenses", deletedIdSet);
+                        sanitizeDeletedList(payloadMap, "incomes", deletedIdSet);
+                        sanitizeDeletedList(payloadMap, "reminders", deletedIdSet);
+                        sanitizeDeletedList(payloadMap, "transfers", deletedIdSet);
+                        sanitizeDeletedList(payloadMap, "people", deletedIdSet);
+                        sanitizeDeletedList(payloadMap, "peopleLedger", deletedIdSet);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     @SuppressWarnings("unchecked")

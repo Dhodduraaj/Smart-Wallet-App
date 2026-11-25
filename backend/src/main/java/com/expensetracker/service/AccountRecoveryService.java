@@ -615,6 +615,14 @@ public class AccountRecoveryService {
                             );
                         }
                     }
+                } else if ("PERSON".equals(entityType) || "PEOPLE".equals(entityType)) {
+                    if ("DELETE".equals(opType)) {
+                        recordTombstone(entityId.toString(), "PERSON", userId);
+                    }
+                } else if ("PEOPLE_LEDGER".equals(entityType) || "PERSON_LEDGER".equals(entityType)) {
+                    if ("DELETE".equals(opType)) {
+                        recordTombstone(entityId.toString(), "PEOPLE_LEDGER", userId);
+                    }
                 }
 
                 processedIds.add(op.getId());

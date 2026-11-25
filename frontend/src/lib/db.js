@@ -1151,13 +1151,30 @@ export async function getLocalReportData(startDate, endDate) {
   const sortedExpenses = sortTransactions(filteredExpenses);
   const sortedIncomes = sortTransactions(filteredIncomes);
 
+  const accounts = store.data.accounts || [];
+  const accountMap = new Map();
+  accounts.forEach(a => {
+    if (a && a.id) accountMap.set(String(a.id).trim().toLowerCase(), a.accountName || 'Cash');
+  });
+
+  const enrichedExpenses = sortedExpenses.map(e => ({
+    ...e,
+    accountName: e.accountName || (e.accountId ? accountMap.get(String(e.accountId).trim().toLowerCase()) : null) || 'Cash'
+  }));
+
+  const enrichedIncomes = sortedIncomes.map(i => ({
+    ...i,
+    accountName: i.accountName || (i.accountId ? accountMap.get(String(i.accountId).trim().toLowerCase()) : null) || 'Cash'
+  }));
+
   return {
     startDate,
     endDate,
     fullName: profile.fullName || 'User',
     email: profile.email || '',
-    expenses: sortedExpenses,
-    incomes: sortedIncomes,
+    expenses: enrichedExpenses,
+    incomes: enrichedIncomes,
+    accounts,
     totalExpenses,
     totalIncome,
     netSavings,
@@ -1212,17 +1229,19 @@ export async function restoreDbFromBackup(backupObj) {
 
 export async function getLocalPeople(search = '') {
   const store = getStoredData();
-  let people = (store.data.people || []).filter(p => p.deleted !== true);
+  const tombstones = new Set((store.data.tombstones || []).map(t => String(t.id).trim().toLowerCase()));
+  let people = (store.data.people || []).filter(p => p.deleted !== true && !tombstones.has(String(p.id).trim().toLowerCase()));
 
   if (search) {
     const q = search.toLowerCase().trim();
     people = people.filter(p => (p.name || '').toLowerCase().includes(q));
   }
 
-  const ledgerEntries = (store.data.peopleLedger || []).filter(e => e.deleted !== true);
+  const ledgerEntries = (store.data.peopleLedger || []).filter(e => e.deleted !== true && !tombstones.has(String(e.id).trim().toLowerCase()));
 
   const peopleWithBalances = people.map(p => {
-    const entries = ledgerEntries.filter(e => e.personId === p.id);
+    const pIdLower = String(p.id).trim().toLowerCase();
+    const entries = ledgerEntries.filter(e => String(e.personId).trim().toLowerCase() === pIdLower);
     const totalIncoming = entries.reduce((sum, e) => sum + parseFloat(e.incomingMoney || 0), 0);
     const totalOutgoing = entries.reduce((sum, e) => sum + parseFloat(e.outgoingMoney || 0), 0);
     const balance = totalIncoming - totalOutgoing; // Incoming increases balance, Outgoing decreases balance
@@ -1253,10 +1272,18 @@ export async function getLocalPeople(search = '') {
 
 export async function getLocalPerson(id) {
   const store = getStoredData();
-  const person = (store.data.people || []).find(p => p.id === id && p.deleted !== true);
+  const targetId = String(id).trim().toLowerCase();
+  const tombstones = new Set((store.data.tombstones || []).map(t => String(t.id).trim().toLowerCase()));
+  if (tombstones.has(targetId)) return null;
+
+  const person = (store.data.people || []).find(p => String(p.id).trim().toLowerCase() === targetId && p.deleted !== true);
   if (!person) return null;
 
-  const ledgerEntries = (store.data.peopleLedger || []).filter(e => e.personId === id && e.deleted !== true);
+  const ledgerEntries = (store.data.peopleLedger || []).filter(e =>
+    String(e.personId).trim().toLowerCase() === targetId &&
+    e.deleted !== true &&
+    !tombstones.has(String(e.id).trim().toLowerCase())
+  );
   const totalIncoming = ledgerEntries.reduce((sum, e) => sum + parseFloat(e.incomingMoney || 0), 0);
   const totalOutgoing = ledgerEntries.reduce((sum, e) => sum + parseFloat(e.outgoingMoney || 0), 0);
   const balance = totalIncoming - totalOutgoing;
@@ -1271,10 +1298,11 @@ export async function getLocalPerson(id) {
   };
 }
 
-export async function saveLocalPersonNote(personId, noteText) {
+export async function saveLocalPersonNote(personId, noteText, isSynced = false) {
   const store = getStoredData();
   const people = store.data.people || [];
-  const index = people.findIndex(p => p.id === personId);
+  const targetId = String(personId).trim().toLowerCase();
+  const index = people.findIndex(p => String(p.id).trim().toLowerCase() === targetId);
   if (index === -1) {
     throw new Error('Person not found');
   }
@@ -1288,10 +1316,24 @@ export async function saveLocalPersonNote(personId, noteText) {
 
   store.data.people = people;
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'PERSON',
+        operationType: 'UPDATE',
+        entityId: people[index].id,
+        payload: people[index]
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for person note:', e);
+    }
+  }
+
   return people[index];
 }
 
-export async function saveLocalPerson(personData) {
+export async function saveLocalPerson(personData, isSynced = false) {
   const store = getStoredData();
   const people = store.data.people || [];
   const name = (personData.name || '').trim();
@@ -1301,14 +1343,15 @@ export async function saveLocalPerson(personData) {
   }
 
   const id = personData.id || generateUUID();
-  const index = people.findIndex(p => p.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const index = people.findIndex(p => String(p.id).trim().toLowerCase() === targetId);
   const now = new Date().toISOString();
 
   const record = {
     ...personData,
     id,
     name,
-    createdAt: index !== -1 ? (people[index].createdAt || now) : now,
+    createdAt: index !== -1 ? (people[index].createdAt || now) : (personData.createdAt || now),
     updatedAt: now,
     deleted: false
   };
@@ -1319,22 +1362,97 @@ export async function saveLocalPerson(personData) {
     people.push(record);
   }
 
+  // Remove from local tombstones if previously marked deleted
+  if (store.data.tombstones) {
+    store.data.tombstones = store.data.tombstones.filter(t => String(t.id).trim().toLowerCase() !== targetId);
+  }
+
   store.data.people = people;
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'PERSON',
+        operationType: index !== -1 ? 'UPDATE' : 'CREATE',
+        entityId: id,
+        payload: record
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for person:', e);
+    }
+  }
+
   return record;
 }
 
-export async function deleteLocalPerson(id) {
+export async function deleteLocalPerson(id, isSynced = false) {
   const store = getStoredData();
-  store.data.people = (store.data.people || []).filter(p => p.id !== id);
-  // Also remove their ledger entries
-  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => e.personId !== id);
+  const targetId = String(id).trim().toLowerCase();
+  const people = store.data.people || [];
+  store.data.people = people.filter(p => String(p.id).trim().toLowerCase() !== targetId);
+
+  // Find and remove all ledger entries for this person
+  const currentLedger = store.data.peopleLedger || [];
+  const personLedgerEntries = currentLedger.filter(e => String(e.personId).trim().toLowerCase() === targetId);
+  store.data.peopleLedger = currentLedger.filter(e => String(e.personId).trim().toLowerCase() !== targetId);
+
+  // Record local tombstone for person
+  store.data.tombstones = store.data.tombstones || [];
+  if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === targetId)) {
+    store.data.tombstones.push({
+      id: targetId,
+      entityType: 'PERSON',
+      deletedAt: new Date().toISOString()
+    });
+  }
+
+  // Record local tombstones for their ledger entries
+  personLedgerEntries.forEach(entry => {
+    const entryTargetId = String(entry.id).trim().toLowerCase();
+    if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === entryTargetId)) {
+      store.data.tombstones.push({
+        id: entryTargetId,
+        entityType: 'PEOPLE_LEDGER',
+        deletedAt: new Date().toISOString()
+      });
+    }
+  });
+
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'PERSON',
+        operationType: 'DELETE',
+        entityId: id,
+      });
+
+      personLedgerEntries.forEach(entry => {
+        enqueueOperation({
+          entityType: 'PEOPLE_LEDGER',
+          operationType: 'DELETE',
+          entityId: entry.id,
+        });
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for person deletion:', e);
+    }
+  }
 }
 
 export async function getLocalPersonLedger(personId) {
   const store = getStoredData();
-  const entries = (store.data.peopleLedger || []).filter(e => e.personId === personId && e.deleted !== true);
+  const targetPersonId = String(personId).trim().toLowerCase();
+  const tombstones = new Set((store.data.tombstones || []).map(t => String(t.id).trim().toLowerCase()));
+  if (tombstones.has(targetPersonId)) return [];
+
+  const entries = (store.data.peopleLedger || []).filter(e =>
+    String(e.personId).trim().toLowerCase() === targetPersonId &&
+    e.deleted !== true &&
+    !tombstones.has(String(e.id).trim().toLowerCase())
+  );
 
   // 1. Sort chronologically oldest -> newest to calculate running total
   const chronoEntries = [...entries].sort((a, b) => {
@@ -1360,11 +1478,12 @@ export async function getLocalPersonLedger(personId) {
   return sortTransactions(entriesWithRunningTotal);
 }
 
-export async function saveLocalPersonLedgerEntry(entryData) {
+export async function saveLocalPersonLedgerEntry(entryData, isSynced = false) {
   const store = getStoredData();
   const ledger = store.data.peopleLedger || [];
   const id = entryData.id || generateUUID();
-  const index = ledger.findIndex(e => e.id === id);
+  const targetId = String(id).trim().toLowerCase();
+  const index = ledger.findIndex(e => String(e.id).trim().toLowerCase() === targetId);
 
   const personId = entryData.personId || (index !== -1 ? ledger[index].personId : null);
   if (!personId) {
@@ -1396,7 +1515,7 @@ export async function saveLocalPersonLedgerEntry(entryData) {
     incomingMoney,
     outgoingMoney,
     date,
-    createdAt: index !== -1 ? (ledger[index].createdAt || now) : now,
+    createdAt: index !== -1 ? (ledger[index].createdAt || now) : (entryData.createdAt || now),
     updatedAt: now,
     deleted: false
   };
@@ -1407,28 +1526,127 @@ export async function saveLocalPersonLedgerEntry(entryData) {
     ledger.push(record);
   }
 
+  // Remove from local tombstones if previously marked deleted
+  if (store.data.tombstones) {
+    store.data.tombstones = store.data.tombstones.filter(t => String(t.id).trim().toLowerCase() !== targetId);
+  }
+
   store.data.peopleLedger = ledger;
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'PEOPLE_LEDGER',
+        operationType: index !== -1 ? 'UPDATE' : 'CREATE',
+        entityId: id,
+        payload: record
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for ledger entry:', e);
+    }
+  }
+
   return record;
 }
 
-export async function deleteLocalPersonLedgerEntry(id) {
+export async function deleteLocalPersonLedgerEntry(id, isSynced = false) {
   const store = getStoredData();
-  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => e.id !== id);
+  const targetId = String(id).trim().toLowerCase();
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => String(e.id).trim().toLowerCase() !== targetId);
+
+  store.data.tombstones = store.data.tombstones || [];
+  if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === targetId)) {
+    store.data.tombstones.push({
+      id: targetId,
+      entityType: 'PEOPLE_LEDGER',
+      deletedAt: new Date().toISOString()
+    });
+  }
+
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      enqueueOperation({
+        entityType: 'PEOPLE_LEDGER',
+        operationType: 'DELETE',
+        entityId: id
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for ledger delete:', e);
+    }
+  }
 }
 
-export async function deleteAllLocalPersonLedgerEntries(personId) {
+export async function deleteAllLocalPersonLedgerEntries(personId, isSynced = false) {
   const store = getStoredData();
-  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => e.personId !== personId);
+  const targetPersonId = String(personId).trim().toLowerCase();
+  const entriesToDelete = (store.data.peopleLedger || []).filter(e => String(e.personId).trim().toLowerCase() === targetPersonId);
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => String(e.personId).trim().toLowerCase() !== targetPersonId);
+
+  store.data.tombstones = store.data.tombstones || [];
+  entriesToDelete.forEach(entry => {
+    const entryTargetId = String(entry.id).trim().toLowerCase();
+    if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === entryTargetId)) {
+      store.data.tombstones.push({
+        id: entryTargetId,
+        entityType: 'PEOPLE_LEDGER',
+        deletedAt: new Date().toISOString()
+      });
+    }
+  });
+
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      entriesToDelete.forEach(entry => {
+        enqueueOperation({
+          entityType: 'PEOPLE_LEDGER',
+          operationType: 'DELETE',
+          entityId: entry.id
+        });
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for delete all ledger:', e);
+    }
+  }
 }
 
-export async function deleteSelectedLocalPersonLedgerEntries(personId, entryIds) {
+export async function deleteSelectedLocalPersonLedgerEntries(personId, entryIds, isSynced = false) {
   const store = getStoredData();
-  const idSet = new Set(Array.isArray(entryIds) ? entryIds : [entryIds]);
-  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => !(e.personId === personId && idSet.has(e.id)));
+  const targetPersonId = String(personId).trim().toLowerCase();
+  const idSet = new Set((Array.isArray(entryIds) ? entryIds : [entryIds]).map(id => String(id).trim().toLowerCase()));
+
+  store.data.peopleLedger = (store.data.peopleLedger || []).filter(e => !(String(e.personId).trim().toLowerCase() === targetPersonId && idSet.has(String(e.id).trim().toLowerCase())));
+
+  store.data.tombstones = store.data.tombstones || [];
+  idSet.forEach(targetId => {
+    if (!store.data.tombstones.some(t => String(t.id).trim().toLowerCase() === targetId)) {
+      store.data.tombstones.push({
+        id: targetId,
+        entityType: 'PEOPLE_LEDGER',
+        deletedAt: new Date().toISOString()
+      });
+    }
+  });
+
   saveStoredData(store);
+
+  if (!isSynced) {
+    try {
+      idSet.forEach(targetId => {
+        enqueueOperation({
+          entityType: 'PEOPLE_LEDGER',
+          operationType: 'DELETE',
+          entityId: targetId
+        });
+      });
+    } catch (e) {
+      console.warn('[db] enqueueOperation error for delete selected ledger:', e);
+    }
+  }
 }
 
 /**
@@ -1470,6 +1688,12 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
   );
   const pendingReminderIds = new Set(
     pendingOps.filter(q => q.entityType === 'REMINDER').map(q => String(q.entityId).trim().toLowerCase())
+  );
+  const pendingPersonIds = new Set(
+    pendingOps.filter(q => q.entityType === 'PERSON' || q.entityType === 'PEOPLE').map(q => String(q.entityId).trim().toLowerCase())
+  );
+  const pendingLedgerIds = new Set(
+    pendingOps.filter(q => q.entityType === 'PEOPLE_LEDGER' || q.entityType === 'PERSON_LEDGER').map(q => String(q.entityId).trim().toLowerCase())
   );
 
   let updatedCount = 0;
@@ -1810,34 +2034,91 @@ export function mergeCloudDataIntoLocal(cloudPayload) {
     const localPeople = store.data.people || [];
     const cloudPMap = new Map();
     cloudPayload.people.forEach(p => {
-      if (p && p.id) cloudPMap.set(String(p.id).trim().toLowerCase(), p);
+      if (p && p.id && !allDeletedIds.has(String(p.id).trim().toLowerCase())) {
+        cloudPMap.set(String(p.id).trim().toLowerCase(), p);
+      }
     });
-    for (const [cloudId, cloudP] of cloudPMap.entries()) {
+
+    for (const [cloudId, rawCloudP] of cloudPMap.entries()) {
       const localIdx = localPeople.findIndex(p => String(p.id).trim().toLowerCase() === cloudId);
       if (localIdx !== -1) {
-        localPeople[localIdx] = { ...localPeople[localIdx], ...cloudP };
+        if (!pendingPersonIds.has(cloudId)) {
+          const localUpdated = new Date(localPeople[localIdx].updatedAt || localPeople[localIdx].createdAt || 0).getTime();
+          const cloudUpdated = new Date(rawCloudP.updatedAt || rawCloudP.createdAt || 0).getTime();
+          if (cloudUpdated >= localUpdated) {
+            localPeople[localIdx] = { ...localPeople[localIdx], ...rawCloudP };
+          }
+        }
       } else {
-        localPeople.push(cloudP);
+        localPeople.push(rawCloudP);
+        updatedCount++;
       }
     }
-    store.data.people = localPeople;
+
+    const retainedPeople = [];
+    for (const localP of localPeople) {
+      const localId = String(localP.id).trim().toLowerCase();
+      if (allDeletedIds.has(localId)) {
+        deletedCount++;
+      } else if (cloudPMap.has(localId)) {
+        retainedPeople.push(localP);
+      } else if (pendingPersonIds.has(localId)) {
+        retainedPeople.push(localP);
+      } else if (!wasPreviouslySynced) {
+        retainedPeople.push(localP);
+      } else {
+        deletedCount++;
+      }
+    }
+    store.data.people = retainedPeople;
   }
 
   if (Array.isArray(cloudPayload.peopleLedger)) {
     const localLedger = store.data.peopleLedger || [];
     const cloudLMap = new Map();
     cloudPayload.peopleLedger.forEach(l => {
-      if (l && l.id) cloudLMap.set(String(l.id).trim().toLowerCase(), l);
+      if (l && l.id) {
+        const lId = String(l.id).trim().toLowerCase();
+        const pId = String(l.personId || '').trim().toLowerCase();
+        if (!allDeletedIds.has(lId) && !allDeletedIds.has(pId)) {
+          cloudLMap.set(lId, l);
+        }
+      }
     });
-    for (const [cloudId, cloudL] of cloudLMap.entries()) {
+
+    for (const [cloudId, rawCloudL] of cloudLMap.entries()) {
       const localIdx = localLedger.findIndex(l => String(l.id).trim().toLowerCase() === cloudId);
       if (localIdx !== -1) {
-        localLedger[localIdx] = { ...localLedger[localIdx], ...cloudL };
+        if (!pendingLedgerIds.has(cloudId)) {
+          const localUpdated = new Date(localLedger[localIdx].updatedAt || localLedger[localIdx].createdAt || 0).getTime();
+          const cloudUpdated = new Date(rawCloudL.updatedAt || rawCloudL.createdAt || 0).getTime();
+          if (cloudUpdated >= localUpdated) {
+            localLedger[localIdx] = { ...localLedger[localIdx], ...rawCloudL };
+          }
+        }
       } else {
-        localLedger.push(cloudL);
+        localLedger.push(rawCloudL);
+        updatedCount++;
       }
     }
-    store.data.peopleLedger = localLedger;
+
+    const retainedLedger = [];
+    for (const localL of localLedger) {
+      const localId = String(localL.id).trim().toLowerCase();
+      const personId = String(localL.personId || '').trim().toLowerCase();
+      if (allDeletedIds.has(localId) || allDeletedIds.has(personId)) {
+        deletedCount++;
+      } else if (cloudLMap.has(localId)) {
+        retainedLedger.push(localL);
+      } else if (pendingLedgerIds.has(localId)) {
+        retainedLedger.push(localL);
+      } else if (!wasPreviouslySynced) {
+        retainedLedger.push(localL);
+      } else {
+        deletedCount++;
+      }
+    }
+    store.data.peopleLedger = retainedLedger;
   }
 
   // 7. MERGE PROFILE

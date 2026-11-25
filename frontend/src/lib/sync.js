@@ -94,8 +94,10 @@ export async function sync() {
         categories,
         reminders: store.data.reminders || [],
         transfers: store.data.transfers || [],
-        people: store.data.people || [],
-        peopleLedger: store.data.peopleLedger || [],
+        people: (store.data.people || []).filter(p => p && p.deleted !== true),
+        peopleLedger: (store.data.peopleLedger || []).filter(l => l && l.deleted !== true),
+        tombstones: store.data.tombstones || [],
+        deletedIds: (store.data.tombstones || []).map(t => t.id),
         profile: store.data.profile || {},
         settings: store.data.settings || {}
       }

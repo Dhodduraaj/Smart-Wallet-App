@@ -838,7 +838,7 @@ const Dashboard = () => {
       >
         <DialogTitle sx={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 700 }}>Others</Typography>
-          <Typography variant="h6" sx={{ fontWeight: 800, color: 'error.main' }}>
+          <Typography variant="h6" sx={{ fontWeight: 800, color: isDark ? '#ffffff' : '#000000' }}>
             ₹{parseFloat(othersData?.amount || othersData?.total || 0).toFixed(2)}
           </Typography>
         </DialogTitle>
@@ -875,7 +875,7 @@ const Dashboard = () => {
                         <TableCell sx={{ fontWeight: 600, py: 1.5, pl: 3 }}>
                           {cat.category}
                         </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700, py: 1.5, pr: 3, color: 'error.main' }}>
+                        <TableCell align="right" sx={{ fontWeight: 700, py: 1.5, pr: 3, color: isDark ? '#ffffff' : '#000000' }}>
                           ₹{parseFloat(cat.amount || 0).toFixed(2)}
                         </TableCell>
                       </TableRow>

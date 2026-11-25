@@ -110,34 +110,24 @@ export function generatePdfReportLocal(reportDto, omitCategory = false) {
     doc.text('Expense Records', margins, currentY);
     currentY += 15;
 
-    let expenseHeaders, expenseRows, columnStyles;
-    if (omitCategory) {
-      expenseHeaders = [['Date', 'Description', 'Amount']];
-      expenseRows = reportDto.expenses.map(exp => [
+    const expenseHeaders = [['Date', 'Description', 'Account', 'Amount']];
+    const expenseRows = reportDto.expenses.map(exp => {
+      const accountName = exp.accountName ||
+        (reportDto.accounts && reportDto.accounts.find(a => String(a.id).trim().toLowerCase() === String(exp.accountId).trim().toLowerCase())?.accountName) ||
+        'Cash';
+      return [
         formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate).dateStr,
         exp.description || '',
+        accountName,
         `₹${parseFloat(exp.amount || 0).toFixed(2)}`
-      ]);
-      columnStyles = {
-        0: { cellWidth: contentWidth * 0.25 },
-        1: { cellWidth: contentWidth * 0.50 },
-        2: { cellWidth: contentWidth * 0.25 }
-      };
-    } else {
-      expenseHeaders = [['Date', 'Description', 'Category', 'Amount']];
-      expenseRows = reportDto.expenses.map(exp => [
-        formatTransactionDateTime(exp.transactionDateTime || exp.createdAt || exp.expenseDate).dateStr,
-        exp.description || '',
-        exp.category || '',
-        `₹${parseFloat(exp.amount || 0).toFixed(2)}`
-      ]);
-      columnStyles = {
-        0: { cellWidth: contentWidth * 0.20 },
-        1: { cellWidth: contentWidth * 0.40 },
-        2: { cellWidth: contentWidth * 0.20 },
-        3: { cellWidth: contentWidth * 0.20 }
-      };
-    }
+      ];
+    });
+    const columnStyles = {
+      0: { cellWidth: contentWidth * 0.20 },
+      1: { cellWidth: contentWidth * 0.40 },
+      2: { cellWidth: contentWidth * 0.20 },
+      3: { cellWidth: contentWidth * 0.20 }
+    };
 
     autoTable(doc, {
       startY: currentY,

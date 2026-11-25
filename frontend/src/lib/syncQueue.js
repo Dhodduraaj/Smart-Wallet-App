@@ -96,17 +96,19 @@ function dispatchStatusChange() {
     currentStatus = 'SYNCED';
   }
 
-  window.dispatchEvent(
-    new CustomEvent('sync-status-changed', {
-      detail: {
-        status: currentStatus,
-        pendingCount,
-        lastSyncTimestamp,
-        lastSyncError,
-        isOnline: navigator.onLine,
-      },
-    })
-  );
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(
+      new CustomEvent('sync-status-changed', {
+        detail: {
+          status: currentStatus,
+          pendingCount,
+          lastSyncTimestamp,
+          lastSyncError,
+          isOnline: navigator.onLine,
+        },
+      })
+    );
+  }
 }
 
 export function getSyncStatus() {
@@ -253,6 +255,32 @@ export function enqueueAllLocalRecords() {
       entityId: rem.id,
       payload: rem,
     });
+  });
+
+  // Enqueue people
+  const people = store.data.people || [];
+  people.forEach(p => {
+    if (!p.deleted) {
+      enqueueOperation({
+        entityType: 'PERSON',
+        operationType: 'CREATE',
+        entityId: p.id,
+        payload: p,
+      });
+    }
+  });
+
+  // Enqueue people ledger
+  const peopleLedger = store.data.peopleLedger || [];
+  peopleLedger.forEach(l => {
+    if (!l.deleted) {
+      enqueueOperation({
+        entityType: 'PEOPLE_LEDGER',
+        operationType: 'CREATE',
+        entityId: l.id,
+        payload: l,
+      });
+    }
   });
 
   scheduleProcess(300);
